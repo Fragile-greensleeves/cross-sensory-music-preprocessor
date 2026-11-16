@@ -1,0 +1,605 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:musicprep:song-package:0.1.0",
+  "title": "Music preprocessing song package 0.1.0",
+  "description": "Structural schema; run musicprep validate for finite-number, timeline and musical semantics checks.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "0.1.0"
+    },
+    "track_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "audio": {
+      "type": "object",
+      "properties": {
+        "source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{64}$"
+        },
+        "duration_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "sample_rate": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "time_origin": {
+          "const": "source_start"
+        }
+      },
+      "required": [
+        "source_sha256",
+        "duration_seconds",
+        "sample_rate",
+        "channels",
+        "time_origin"
+      ],
+      "additionalProperties": true
+    },
+    "run": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "complete",
+            "partial",
+            "failed"
+          ]
+        },
+        "tasks": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/task"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "tasks"
+      ],
+      "additionalProperties": true
+    },
+    "melody": {
+      "type": "object",
+      "properties": {
+        "notes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/note"
+          }
+        },
+        "contour": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/frame"
+          }
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      },
+      "required": [
+        "notes",
+        "contour"
+      ],
+      "additionalProperties": true
+    },
+    "harmony": {
+      "type": "object",
+      "properties": {
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/chord"
+          }
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      },
+      "required": [
+        "segments"
+      ],
+      "additionalProperties": true
+    },
+    "rhythm": {
+      "type": "object",
+      "properties": {
+        "beats": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/beat"
+          }
+        },
+        "tempo": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/tempo"
+          }
+        },
+        "meter": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/meter"
+          }
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      },
+      "required": [
+        "beats",
+        "tempo",
+        "meter"
+      ],
+      "additionalProperties": true
+    },
+    "sections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/section"
+      }
+    },
+    "descriptions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/description"
+      }
+    },
+    "lyrics_context": {
+      "type": "object",
+      "properties": {
+        "lyrics": {
+          "type": "array"
+        },
+        "themes": {
+          "type": "array"
+        },
+        "narrative": {
+          "type": "array"
+        },
+        "imagery": {
+          "type": "array"
+        },
+        "background": {
+          "type": "array"
+        },
+        "sources": {
+          "type": "array"
+        }
+      },
+      "required": [
+        "lyrics",
+        "themes",
+        "narrative",
+        "imagery",
+        "background",
+        "sources"
+      ],
+      "additionalProperties": true
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "schema_version",
+    "track_id",
+    "audio",
+    "run",
+    "melody",
+    "harmony",
+    "rhythm",
+    "sections",
+    "descriptions",
+    "lyrics_context",
+    "warnings"
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "provenance": {
+      "type": "object"
+    },
+    "note": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "number",
+          "minimum": 0
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0
+        },
+        "midi": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 127
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "estimated",
+            "unknown",
+            "absent"
+          ]
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "midi",
+        "source",
+        "status"
+      ],
+      "additionalProperties": true
+    },
+    "frame": {
+      "type": "object",
+      "properties": {
+        "time": {
+          "type": "number",
+          "minimum": 0
+        },
+        "f0_hz": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0
+        },
+        "midi_float": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "valid": {
+          "type": "boolean"
+        },
+        "quality": {}
+      },
+      "required": [
+        "time",
+        "f0_hz",
+        "midi_float",
+        "valid"
+      ],
+      "additionalProperties": true
+    },
+    "chord": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "number",
+          "minimum": 0
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pitch_classes": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 11
+          },
+          "uniqueItems": true
+        },
+        "status": {
+          "enum": [
+            "estimated",
+            "unknown",
+            "absent",
+            "no_chord"
+          ]
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "label",
+        "pitch_classes",
+        "status"
+      ],
+      "additionalProperties": true
+    },
+    "beat": {
+      "type": "object",
+      "properties": {
+        "time": {
+          "type": "number",
+          "minimum": 0
+        },
+        "is_downbeat": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "bar_index": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "beat_in_bar": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      },
+      "required": [
+        "time",
+        "is_downbeat",
+        "bar_index",
+        "beat_in_bar"
+      ],
+      "additionalProperties": true
+    },
+    "meter": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "number",
+          "minimum": 0
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0
+        },
+        "numerator": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "denominator": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "status": {
+          "enum": [
+            "estimated",
+            "unknown",
+            "absent"
+          ]
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "numerator",
+        "denominator"
+      ],
+      "additionalProperties": true
+    },
+    "section": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "number",
+          "minimum": 0
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "estimated",
+            "unknown",
+            "absent"
+          ]
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "id",
+        "label",
+        "source",
+        "status"
+      ],
+      "additionalProperties": true
+    },
+    "emotion": {
+      "type": "object",
+      "properties": {
+        "valence": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "arousal": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "scale": {
+          "type": [
+            "array",
+            "string",
+            "object",
+            "null"
+          ]
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": true
+    },
+    "description": {
+      "type": "object",
+      "properties": {
+        "section_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "analysis_start": {
+          "type": "number",
+          "minimum": 0
+        },
+        "analysis_end": {
+          "type": "number",
+          "minimum": 0
+        },
+        "applies_start": {
+          "type": "number",
+          "minimum": 0
+        },
+        "applies_end": {
+          "type": "number",
+          "minimum": 0
+        },
+        "genre": {
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "instruments": {
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "textures": {
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "emotion": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/emotion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "section_id",
+        "analysis_start",
+        "analysis_end",
+        "applies_start",
+        "applies_end"
+      ],
+      "additionalProperties": true
+    },
+    "task": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "pending",
+            "running",
+            "succeeded",
+            "partial",
+            "failed",
+            "skipped"
+          ]
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "duration_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cached": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "additionalProperties": true
+    },
+    "tempo": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "number",
+          "minimum": 0
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0
+        },
+        "bpm": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "beat_unit": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "bpm",
+        "beat_unit"
+      ],
+      "additionalProperties": true
+    }
+  }
+}
