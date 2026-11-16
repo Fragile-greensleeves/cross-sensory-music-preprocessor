@@ -1,13 +1,65 @@
 {
-  "config_version": "0.1.0",
-  "status": "design_only_not_loaded_by_prepare_script",
-  "time_origin": "source_start",
-  "separation": {"engine": "audio-separator", "model": "htdemucs_ft.yaml"},
-  "melody": {"note_engine": "basic-pitch", "pitch_engine": "torchcrepe", "instrumental_engine": "essentia-predominant-pitch-melodia", "selector": "vocal_priority_with_hysteresis", "thresholds": "to_be_evaluated"},
-  "harmony": {"engine": "BTC-ISMIR19", "large_vocabulary": true},
-  "rhythm": {"engine": "beat_this", "model": "final0", "dbn": false},
-  "sections": {"engine": "allin1", "model": "harmonix-all", "fallback_window_seconds": 30},
-  "descriptions": {"tag_engine": "essentia", "emotion_engine": "Music2Emo", "caption_engine": "Qwen2-Audio", "unit": "section", "textures": ["拨弦", "持续", "短促", "明亮", "偏暗", "柔和", "颗粒", "未知"]},
-  "lyrics_context": {"alignment_engine": "SOFA", "lyrics_required": false, "background_required": false, "automatic_transcription": false},
-  "execution": {"gpu_concurrency": 1, "retries": 1, "task_timeout_seconds": null, "cache": true, "isolated_workdirs": true}
+  "schema_version": "0.1.0",
+  "execution": {
+    "timeout_seconds": 3600,
+    "retries": 0
+  },
+  "tasks": {
+    "separation": {
+      "backend": "demucs",
+      "model": "htdemucs",
+      "device": "cpu",
+      "threads": 4,
+      "shifts": 0
+    },
+    "rhythm": {
+      "backend": "beat_this",
+      "model": "final0",
+      "checkpoint": "../models/beat_this-final0.ckpt"
+    },
+    "sections": {
+      "backend": "allin1",
+      "model": "harmonix-all",
+      "device": "cpu",
+      "model_revision": "379e5fd010b3fdd0ee8381ff8cbcfa51d70b5c19"
+    },
+    "melody": {
+      "backend": "basic_pitch",
+      "pitch_backend": "torchcrepe",
+      "crepe_model": "tiny"
+    },
+    "harmony": {
+      "backend": "btc",
+      "btc_repo": "../models/vendor/BTC-ISMIR19"
+    },
+    "descriptions": {
+      "backend": "auto",
+      "model_backends": {
+        "music2emo": {
+          "repo": "../models/vendor/Music2Emotion",
+          "allow_download": true,
+          "timeout_seconds": 1800
+        },
+        "essentia": {
+          "embedding": "../models/essentia/discogs-effnet-bs64-1.pb",
+          "genre": {
+            "graph": "../models/essentia/genre_discogs400-discogs-effnet-1.pb",
+            "metadata": "../models/essentia/genre_discogs400-discogs-effnet-1.json",
+            "threshold": 0.1,
+            "top_k": 5
+          },
+          "instruments": {
+            "graph": "../models/essentia/mtg_jamendo_instrument-discogs-effnet-1.pb",
+            "metadata": "../models/essentia/mtg_jamendo_instrument-discogs-effnet-1.json",
+            "threshold": 0.1,
+            "top_k": 5
+          },
+          "timeout_seconds": 1800
+        }
+      }
+    },
+    "lyrics_context": {
+      "backend": "baseline"
+    }
+  }
 }

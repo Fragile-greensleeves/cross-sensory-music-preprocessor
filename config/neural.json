@@ -1,0 +1,65 @@
+{
+  "schema_version": "0.1.0",
+  "execution": {
+    "timeout_seconds": 3600,
+    "retries": 0
+  },
+  "tasks": {
+    "separation": {
+      "backend": "demucs",
+      "model": "htdemucs",
+      "device": "cpu",
+      "threads": 4,
+      "shifts": 0
+    },
+    "rhythm": {
+      "backend": "beat_this",
+      "model": "final0",
+      "checkpoint": "../models/beat_this-final0.ckpt"
+    },
+    "sections": {
+      "backend": "allin1",
+      "model": "harmonix-all",
+      "device": "cpu",
+      "model_revision": "379e5fd010b3fdd0ee8381ff8cbcfa51d70b5c19"
+    },
+    "melody": {
+      "backend": "basic_pitch",
+      "pitch_backend": "torchcrepe",
+      "crepe_model": "tiny"
+    },
+    "harmony": {
+      "backend": "btc",
+      "btc_repo": "../models/vendor/BTC-ISMIR19"
+    },
+    "descriptions": {
+      "backend": "auto",
+      "model_backends": {
+        "music2emo": {
+          "repo": "../models/vendor/Music2Emotion",
+          "allow_download": true,
+          "timeout_seconds": 1800
+        },
+        "essentia": {
+          "embedding": "../models/essentia/discogs-effnet-bs64-1.pb",
+          "genre": {
+            "graph": "../models/essentia/genre_discogs400-discogs-effnet-1.pb",
+            "metadata": "../models/essentia/genre_discogs400-discogs-effnet-1.json",
+            "threshold": 0.1,
+            "top_k": 5
+          },
+          "instruments": {
+            "graph": "../models/essentia/mtg_jamendo_instrument-discogs-effnet-1.pb",
+            "metadata": "../models/essentia/mtg_jamendo_instrument-discogs-effnet-1.json",
+            "threshold": 0.1,
+            "top_k": 5
+          },
+          "timeout_seconds": 1800
+        }
+      }
+    },
+    "lyrics_context": {
+      "backend": "baseline"
+    }
+  }
+}

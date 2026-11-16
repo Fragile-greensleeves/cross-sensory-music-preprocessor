@@ -1,6 +1,6 @@
-# 数据接口草案 v0.1
+# 数据接口 v0.1
 
-接口在接入第一组模型前冻结；本版是规范草案，完整歌曲包校验器将在模型适配阶段实现。当前可运行脚本只输出音频准备 manifest。
+当前运行格式见 [歌曲包字段](package-format.md) 与 [JSON Schema](../schemas/song-package.schema.json)。CLI 同时执行结构、时间范围和音乐状态校验；本页说明设计约定。
 
 ## 公共约定
 
@@ -26,7 +26,7 @@
 | `descriptions` | section_id, analysis/applies范围, genre, instruments, textures, emotion | 各子结果可独立缺失；emotion 带量表 |
 | `lyrics_context` | lyrics, themes, narrative, imagery, background, sources | 缺文本时为空数组并记录 skipped |
 
-每个分区附 `provenance`：engine、model_id、model_sha256、code_revision、parameters、run_id。模型初次下载尚未确定的字段为 null；正式推理产物必须尽量记录具体权重与版本。
+`run.tasks` 保存每项任务的状态、耗时、缓存键与实际 `provenance`。旋律、和声、节奏附来源；描述字段另记录各模型来源。可取得时保留模型哈希和代码版本，不把缺失的元数据编造出来。
 
 ## 状态
 
@@ -45,7 +45,7 @@
 {
   "schema_version": "0.1.0",
   "track_id": "example-track",
-  "audio": {"source_sha256": "...", "duration_seconds": 120.0, "time_origin": "source_start"},
+  "audio": {"source_sha256": "...", "duration_seconds": 120.0, "sample_rate": 44100, "channels": 2, "time_origin": "source_start"},
   "run": {"id": "...", "status": "partial", "tasks": {}},
   "melody": {"notes": [], "contour": [], "provenance": {}},
   "harmony": {"segments": [], "provenance": {}},

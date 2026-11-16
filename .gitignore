@@ -1,5 +1,9 @@
 .DS_Store
 .venv/
+.venv-*/
+*.egg-info/
+build/
+dist/
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -21,3 +25,5 @@ data/*
 *.pth
 *.onnx
 *.safetensors
+*.pb
+*.tflite
