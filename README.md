@@ -1,133 +1,97 @@
-# 跨感官音乐自动预处理
+# 跨感官音乐预处理 · 视觉与触觉交接版
 
-**输入歌曲，一条命令生成旋律、和弦、节拍、段落、音乐描述与可选歌词数据，并用本地报告同步回放。**
+**将歌曲分析为同一时间轴上的旋律、和声、节奏和描述数据，供彩色眼镜、手部灯带、固定强度马达读取。**
 
-分析在播放前离线运行，全程无逐曲人工确认。所有输出保留原曲时间轴，供视觉、灯带和固定强度马达的映射读取。
+当前交付：`qingtian-reviewed-2026-11-16`。《晴天》整曲已分析并完成本轮谱面补充和两处冲突复核。队友可以直接做转译，无需重新安装或运行分析模型。
+
+## 队友从这里开始
+
+1. 读 [Framework](docs/framework.md)：目标、信息、通道、映射四层，以及当前硬件边界。
+2. 读 [转译接入说明](docs/handoff.md)：每个人读哪些字段、如何同步、需要完成什么。
+3. 使用 [最终数据目录](handoff/qingtian/README.md)：`song-package.json` 是下游输入，`report.html` 是回放诊断。
+4. 把 [AI 接手指令](docs/ai-prompts.md) 中对应角色的一段交给 AI。
+
+| 交付内容 | 当前结果 |
+|---|---|
+| 旋律 | 916个音符候选及连续音高 |
+| 和声 | 165个和弦片段及组成音类 |
+| 节奏 | 305个拍点，其中77个小节第一拍 |
+| 描述 | 21个段落/描述区间，曲风、乐器、质感、效价与唤醒度 |
+| 歌词 | 本地完整版：50行、494个对齐单位；公开包不含歌词原文 |
+| 回放 | 音频同步时间线；本地完整版逐字放大、整句置于下方 |
+
+**这些是分析结果与接入资料，Unity/眼镜画面和 ESP32 马达固件仍由下游实现。** `partial` 保留旋律候选的真实状态，不表示所有分析未完成，也不代表音乐识别已全部验证。
 
 ## 整体架构
 
 ```mermaid
 flowchart TB
-    A["输入音频 · 可选歌词/背景"] --> B["FFmpeg / ffprobe<br/>原时长 WAV · 元数据 · SHA-256"]
-    B --> C["Demucs htdemucs<br/>人声 · 鼓 · 贝斯 · 其他伴奏"]
+    A["音频 + 可选歌词/背景"] --> B["FFmpeg / ffprobe：原曲时间轴、音频哈希"]
+    B --> C["Demucs：人声、鼓、贝斯、其他伴奏"]
     B --> D["完整混音"]
-    C --> M["Basic Pitch + torchcrepe / YIN<br/>旋律候选 · 音高 · 音符起止"]
-    D --> H["BTC + mir_eval<br/>和弦标签 · 组成音 · 起止"]
-    D --> R["Beat This!<br/>拍点 · 第一拍 · 局部速度"]
-    D --> S["All-In-One<br/>段落名称与边界"]
-    S --> E["按段落分析完整混音<br/>Essentia + Qwen2-Audio：曲风/乐器/质感<br/>Music2Emo：效价/唤醒度"]
-    C --> L["可选歌词 + 人声 → SOFA<br/>字/唱名起止 · 逐行歌词<br/>提取式主题/意象 · 有来源的背景"]
-    M --> Q["统一秒数 · 状态与来源 · 校验"]
-    H --> Q
-    R --> Q
-    E --> Q
-    L --> Q
-    Q --> O["song-package.json + report.html<br/>供视觉 / 灯带 / 马达映射读取"]
-    classDef base fill:#EDF2FA,stroke:#617DA6,color:#15345E;
+    C --> I["即时路径·旋律<br/>Basic Pitch + torchcrepe / YIN<br/>音高、起止、有效标记"]
+    D --> J["即时路径·和声与节奏<br/>BTC + Beat This!<br/>和弦、音类、拍点、第一拍"]
+    D --> K["All-In-One：段落与边界"]
+    K --> L["描述路径<br/>Essentia + Qwen2-Audio + Music2Emo<br/>曲风、乐器、质感、效价/唤醒度"]
+    C --> M["参考歌词 + SOFA<br/>歌词对齐与文本线索"]
+    I --> N["统一歌曲包 · 时间/状态校验"]
+    J --> N
+    L --> N
+    M --> N
+    N --> R["可选：谱面辅助补充与证据复核<br/>本次晴天交付包含此步骤"]
+    R --> O["最终 song-package.json + report.html"]
+    O --> V["视觉队友：旋律线、和声光斑、材质与氛围"]
+    O --> T["触觉队友：手背音区、手腕节拍；灯带联动"]
+    classDef input fill:#EDF2FA,stroke:#617DA6,color:#15345E;
     classDef instant fill:#E8F2FD,stroke:#578BC2,color:#15345E;
-    classDef descr fill:#F0EBF8,stroke:#8974B1,color:#493966;
+    classDef description fill:#F0EBF8,stroke:#8974B1,color:#493966;
     classDef output fill:#123675,stroke:#123675,color:#FFFFFF;
-    class A,B,C,D,S base;
-    class M,H,R instant;
-    class E,L descr;
-    class Q,O output;
+    class A,B,C,D,K input;
+    class I,J instant;
+    class L,M description;
+    class N,R,O,V,T output;
 ```
 
-缺失模型自动标记并回退；没有歌词或背景时留空。`config/full.json` 启用 Qwen2-Audio 与 SOFA；`config/neural.json` 保留较轻的神经分析配置。[详细架构](docs/architecture.md)
+即时路径的数据也是离线分析后按播放时间读取。SOFA 需要提供歌词，不负责听写；没有背景资料时背景为空。自动基线与后续复核分开记录，重跑模型不会自动复现谱面补充。
 
-## 已实现
+## 直接查看
 
-| 能力 | 实现 |
-|---|---|
-| 完整流水线 | CLI、独立任务进程、超时/重试、缓存恢复、运行日志、环境与模型指纹 |
-| 即时路径 | Demucs、Basic Pitch + torchcrepe/YIN、BTC、Beat This!、All-In-One |
-| 描述路径 | Essentia + Qwen2-Audio 曲风/乐器/质感、Music2Emo 效价/唤醒度 |
-| 可选文本 | LRC/纯文本、SOFA 中文逐字对齐、提取式主题与意象、带来源背景 |
-| 数据与回放 | JSON Schema + 时间语义校验；离线 HTML 音频播放、拖动和同步时间线 |
-| 降级处理 | 基础算法真实计算；实际后端、未知字段与 partial 状态可见 |
+下载仓库后打开 [handoff/qingtian/report.html](handoff/qingtian/report.html)，选择同版本本地音频。音频时长269.747208秒；原文件 SHA-256 见 [manifest.json](handoff/qingtian/manifest.json)。
 
-已用本地《晴天》整曲验证：Qwen 21/21 窗口真实生成，SOFA 对齐 50 行、494 个汉字/唱名单位；[实测记录](reports/qingtian-analysis.md)。**链路运行不等于识别准确率达标**：主旋律归属、复杂和弦和描述仍是估计。完整配置采用独立 MLX / SOFA 环境，模型来源、实际覆盖和限制单独记录。
+![当前公开回放页](handoff/qingtian/preview.png)
 
-## 快速运行：基础版
+公开包保留转译所需的数值时间线和音乐标签，不包含原曲、完整歌词、分轨、权重或本地路径。歌词功能请使用另行发送的 `qingtian-team-full.zip`；缺歌词时应显示为空，不用 AI 补写。
 
-需要 Python 3.11、FFmpeg/ffprobe；当前实测 macOS Apple Silicon，基础版也面向 Linux。
-
-```sh
-# macOS：brew install ffmpeg uv
-uv venv --python 3.11
-uv pip install --python .venv/bin/python -e .
-
-# 用自生成声音先试跑，不需要歌曲文件
-.venv/bin/python examples/create_demo.py
-.venv/bin/musicprep analyze work/demo.wav --output work/demo --profile baseline
-
-# 查看本地报告（macOS）
-open work/demo/report.html
-```
-
-基础版生成真实算法估计，不提供神经模型的曲风/情绪标签，也不会把窗口名称伪装成主歌/副歌。
-
-## 神经模型版
-
-按 [安装指南](docs/setup.md) 安装模型依赖与准备权重后：
-
-```sh
-.venv/bin/musicprep analyze data/raw/qingtian.flac \
-  --output work/qingtian-final --track-id qingtian --config config/neural.json
-
-.venv/bin/musicprep validate work/qingtian-final/song-package.json
-open work/qingtian-final/report.html
-```
-
-可换成任意本地音频；`--lyrics song.lrc --background background.json` 添加可选文本。配置文件中的相对路径以**配置文件目录**为基准。默认配置采用 CPU，适合先验证；首次运行可能下载模型。
-
-- 原命令再次执行会复用有效缓存；改输入、参数、代码、显式模型文件或 worker 环境会自动失效。
-- `--force` 强制重新分析。`--require-complete` 让部分完成返回退出码 2。
-- `musicprep doctor` 检查环境；`musicprep report package.json --output report.html --audio song.flac` 重建报告。
-- 模型缺失或失败保留实际原因；任务配置 `fallback:false` 可禁用降级。
-
-## 完整配置：Qwen2-Audio + SOFA
-
-在上述神经模型环境基础上，Apple Silicon 可运行：
-
-```sh
-.venv/bin/python scripts/setup_qwen.py
-.venv/bin/python scripts/setup_sofa.py
-.venv/bin/musicprep analyze data/raw/qingtian.flac \
-  --output work/qingtian-full --track-id qingtian \
-  --config config/full.json --lyrics data/raw/qingtian-lyrics.txt
-```
-
-Qwen 使用 6.56 GB 的真实 4-bit 权重，输出按来源保留的曲风、乐器和质感候选；SOFA 用中文演唱模型将无时间歌词对齐到人声。两者各有独立环境，按顺序运行。**SOFA 需要歌词文本，不负责自动听写。** [Qwen 实现](docs/qwen-implementation.md) · [SOFA 实现](docs/sofa-implementation.md)
-
-## 回放报告
-
-![本地音乐分析报告](reports/assets/analysis-preview.png)
-
-播放器与原曲时间线同步，支持拖动查看音高、和弦、拍点、段落、描述及逐字歌词；全部在本地浏览器运行。[公开报告（下载后打开）](reports/qingtian-preview.html) 不包含原曲音频或歌词原文。
-
-## 输出
+## 仓库目录
 
 ```text
-work/<歌曲>/
-  song-package.json       六份分析时间线、状态与来源
-  report.html             无外部依赖的本地回放报告
-  run-summary.json        实际配置、环境、耗时
-  run-state.json          各任务运行状态
-  audio/                  原时间轴 WAV 与 manifest
-  cache/                  模型结果、分轨、逐任务日志
+handoff/qingtian/   当前唯一的公开交付数据、回放页、版本清单
+ docs/framework.md 四层设计框架
+ docs/handoff.md   视觉、触觉与同步接入说明
+ docs/ai-prompts.md AI 接手指令
+ docs/             字段格式、安装、方法与实现说明
+ src/musicprep/    自动分析、校验、回放与复核代码
+ config/           baseline / neural / full 三种运行配置
+ scripts/          模型准备与交接导出
+ schemas/          JSON Schema
+ tests/            自动化测试
+ reports/          历史自动基线的实测证据（不是当前交付数据）
 ```
 
-`complete` 表示所需任务完成，`partial` 表示存在降级、缺失或不确定来源，均不代表已验证音乐正确性。音区划分、马达强弱/脉冲、灯光位置与配色属于下游映射，不混入原始分析结果。
+## 开发与复现
 
-## 文档与开发
-
-[安装与模型准备](docs/setup.md) · [方法](docs/methods.md) · [歌曲包格式](docs/package-format.md) · [数据约定](docs/data-contract.md) · [开发进度](docs/development-plan.md) · [工具与论文](docs/references.md)
+[安装与模型准备](docs/setup.md) · [运行命令](docs/running.md) · [歌曲包字段](docs/package-format.md) · [架构](docs/architecture.md) · [方法](docs/methods.md) · [论文与工具](docs/references.md) · [谱面补充与复核](docs/score-supplement.md)
 
 ```sh
+# 已配置 Python 环境后：校验公开交接包，不需要模型权重
+.venv/bin/musicprep validate handoff/qingtian/song-package.json
+
+# 自动测试
 .venv/bin/python -m unittest discover -s tests -v
+
+# 从已有完整结果重新导出公开交接版
+.venv/bin/python scripts/export_handoff.py work/qingtian-reviewed/song-package.json \
+  --output handoff/qingtian --release qingtian-reviewed-2026-11-16
 ```
 
-测试覆盖真实子进程的完整基础流程、静音/起音/音高、缓存失效、模型失败、时间边界、LRC 偏移和清屏、非法数据与报告注入。云端 CI 尚未启用；`config/ci.workflow.example.yml` 是可复制的配置示例，现有 GitHub 授权缺少 workflow 写权限。
-
-设计依据：[Framework PR #1](https://github.com/AngelaYellow/cross-sensory-live-music/pull/1)。音频、完整歌词、分离声部和模型权重只保存在本地，不提交公开仓库。第三方代码及权重遵循各自许可，来源与校验值见 [模型清单](config/model-sources.json)。
+神经模型实测为 Apple M5 / 16GB；Qwen2-Audio 与 SOFA 已接入真实权重。[自动基线实测记录](reports/qingtian-analysis.md) 保留原始耗时与来源；模型运行成功不等于已获得音乐学准确率结论。CI 配置仍为 `config/ci.workflow.example.yml` 模板，尚未启用云端工作流。

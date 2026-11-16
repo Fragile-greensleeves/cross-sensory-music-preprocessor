@@ -12,6 +12,18 @@ from test_validation import package_fixture
 
 
 class ReportTest(unittest.TestCase):
+    def test_reference_notes_use_normal_style_and_collapsed_audit(self):
+        package = package_fixture()
+        package['melody']['notes'].append({'start': 2.2, 'end': 2.6, 'midi': 62,
+                                           'source': 'score_assisted_gap', 'status': 'estimated'})
+        with tempfile.TemporaryDirectory() as tmp:
+            content = write_report(package, Path(tmp) / 'report.html').read_text()
+        self.assertIn('score_assisted_gap', content)
+        self.assertNotIn('#d79a38', content)
+        self.assertNotIn('橙色短线', content)
+        self.assertIn('<details id="scoreSupplement" hidden></details>', content)
+        self.assertIn("ctx.fillStyle='#bbd4ee';ctx.fillRect(x(n.start)", content)
+
     def test_script_escape_and_json_round_trip(self):
         package = package_fixture()
         attack = '</script><script>alert("x")</script><img onerror="bad()"> & \u2028'

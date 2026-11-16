@@ -26,6 +26,11 @@ def main():
     report.add_argument("--output", type=Path, required=True)
     report.add_argument("--audio", type=Path)
     report.add_argument("--public", action="store_true", help="导出可分享的诊断报告，去除歌词原文、本地路径和音频链接")
+    supplement = sub.add_parser("supplement", help="按已核对的谱图清单补旋律空缺，保留原始结果")
+    supplement.add_argument("package", type=Path)
+    supplement.add_argument("--reference", type=Path, required=True)
+    supplement.add_argument("--output", type=Path, required=True, help="新目录，不覆盖原始数据包")
+    supplement.add_argument("--audio", type=Path)
     sub.add_parser("doctor", help="检查依赖，不下载模型")
     args = parser.parse_args()
     try:
@@ -54,7 +59,21 @@ def main():
             if errors:
                 print(json.dumps({"valid": False, "errors": errors}, ensure_ascii=False, indent=2))
                 raise SystemExit(1)
-            if args.command == "report":
+            if args.command == "supplement":
+                from .reference import supplement_gaps
+                from .report import write_report
+                if args.output.resolve() == args.package.parent.resolve():
+                    raise ValueError("Supplement output must use a different directory from the baseline")
+                package = supplement_gaps(package, json.loads(args.reference.read_text(encoding="utf-8")))
+                errors = validate_package(package)
+                if errors:
+                    raise ValueError(f"Invalid supplemented package: {errors}")
+                args.output.mkdir(parents=True, exist_ok=True)
+                (args.output / "song-package.json").write_text(json.dumps(package, ensure_ascii=False, indent=2), encoding="utf-8")
+                write_report(package, args.output / "report.html", args.audio)
+                print(json.dumps({"report": str(args.output / "report.html"),
+                                  "added": package["melody"]["provenance"]["score_supplement"]["added_count"]}, ensure_ascii=False))
+            elif args.command == "report":
                 from .report import write_report
                 write_report(package, args.output, args.audio, public=args.public)
                 print(args.output)

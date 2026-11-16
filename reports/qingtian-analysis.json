@@ -508,7 +508,6 @@
     "clicked": 130.635431,
     "jsErrors": [],
     "externalRequests": [],
-    "mobileOverflow": false,
-    "preview": "reports/assets/analysis-preview.png"
+    "mobileOverflow": false
   }
 }

@@ -56,3 +56,7 @@ musicprep validate work/my-song/song-package.json
 - 提供了歌词/背景时，其处理失败会使总状态为 `partial`；未提供时仍允许 `skipped`。
 
 分享诊断前使用 `.venv/bin/musicprep report work/qingtian-full/song-package.json --output work/public-report.html --public`。公开版移除歌词原文、文本语义、本地路径与音频引用；默认本地报告保留完整诊断。不要直接发布本地完整歌曲包或报告。
+
+## 当前协作入口
+
+直接转译请用 [交接包](../handoff/qingtian/README.md)；字段的具体视觉/触觉对应关系见 [接入说明](handoff.md)。公开交接包保留合法歌曲包结构，移除歌词和原始模型文本；本地完整版保留全部结果，两者不要混合追加。导出命令见 README。

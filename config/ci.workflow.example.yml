@@ -19,4 +19,4 @@ jobs:
       - name: Run synthetic-audio and pipeline tests
         run: python -m unittest discover -s tests -v
       - name: Validate configuration JSON
-        run: python -m json.tool config/pipeline.example.json > /dev/null
+        run: python -m json.tool config/full.json > /dev/null
