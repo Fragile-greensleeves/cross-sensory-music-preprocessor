@@ -11,7 +11,7 @@ DEFAULT = {
     "tasks": {task: {"backend": "auto", "fallback": True} for task in TASKS},
 }
 
-PATH_KEYS = {"repo", "btc_repo", "weights", "checkpoint", "dictionary", "embedding", "graph", "metadata", "basic_pitch_model"}
+PATH_KEYS = {"repo", "btc_repo", "weights", "checkpoint", "dictionary", "embedding", "graph", "metadata", "basic_pitch_model", "source_metadata"}
 
 
 def resolve_paths(value, base):
@@ -22,7 +22,9 @@ def resolve_paths(value, base):
     for key, item in value.items():
         if isinstance(item, dict):
             result[key] = resolve_paths(item, base)
-        elif isinstance(item, str) and (key in PATH_KEYS or (key in {"python", "python_executable"} and ("/" in item or item.startswith("~")))):
+        elif isinstance(item, str) and (key in PATH_KEYS
+                or (key == "model_id" and (item.startswith((".", "/", "~")) or (base / item).is_dir()))
+                or (key in {"python", "python_executable"} and ("/" in item or item.startswith("~")))):
             path = Path(item).expanduser()
             target = base / path if not path.is_absolute() else path
             # Resolving a venv's python symlink would bypass that environment.
@@ -68,4 +70,8 @@ def load_config(path=None, profile="auto"):
             raise ValueError(f"{task}.backend must be a string")
         if not isinstance(params.get("fallback"), bool):
             raise ValueError(f"{task}.fallback must be boolean")
+        if "timeout_seconds" in params:
+            value = params["timeout_seconds"]
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{task}.timeout_seconds must be positive and finite")
     return config

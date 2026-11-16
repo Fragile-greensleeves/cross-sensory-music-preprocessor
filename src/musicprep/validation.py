@@ -124,6 +124,9 @@ def validate_package(package):
         for name in ("melody", "harmony", "rhythm", "sections", "descriptions"):
             if not isinstance(tasks.get(name), dict) or tasks[name].get("status") != "succeeded":
                 error("run.status", f"complete requires successful {name}")
+        lyrics_task = tasks.get("lyrics_context", {"status": "skipped"})
+        if not isinstance(lyrics_task, dict) or lyrics_task.get("status") not in ("succeeded", "skipped"):
+            error("run.status", "complete requires supplied lyrics/context to succeed")
 
     melody = obj(package.get("melody"), "melody")
     notes = arr(melody.get("notes"), "melody.notes")
@@ -293,6 +296,46 @@ def validate_package(package):
                 if value.get("start") is None and value.get("end") is None:
                     continue  # Unaligned whole-song semantics are allowed.
                 interval(value, f"lyrics_context.{key}[{index}]")
+    # Word timings are original-audio timestamps, not offsets within a line.
+    # Untimed text/LRC without word estimates may omit this optional array.
+    lyric_lines = lyrics.get("lyrics", [])
+    if isinstance(lyric_lines, list):
+        for line_index, line in enumerate(lyric_lines):
+            line_path = f"lyrics_context.lyrics[{line_index}]"
+            if not isinstance(line, dict):
+                error(line_path, "must be an object")
+                continue
+            if "words" not in line:
+                continue
+            words_path = line_path + ".words"
+            words = arr(line["words"], words_path)
+            sorted_records(words, words_path, "start")
+            parent_start, parent_end = line.get("start"), line.get("end")
+            parent_aligned = number(parent_start) and number(parent_end) and parent_start < parent_end
+            if words and not parent_aligned:
+                error(words_path, "word timings require a timed parent lyric interval")
+            prior_word_end = None
+            for word_index, word in enumerate(words):
+                path = f"{words_path}[{word_index}]"
+                if not isinstance(word, dict):
+                    continue  # sorted_records already reports its malformed shape.
+                interval(word, path)
+                string(word.get("text"), path + ".text")
+                string(word.get("token"), path + ".token")
+                start, end = word.get("start"), word.get("end")
+                if parent_aligned and number(start) and number(end):
+                    if start < parent_start - 1e-6 or end > parent_end + 1e-6:
+                        error(path, "word interval must be contained in its parent lyric interval")
+                if number(start) and prior_word_end is not None and start < prior_word_end - 1e-6:
+                    error(path, "word intervals must not overlap")
+                if number(end):
+                    prior_word_end = end
+                if "phonemes" in word:
+                    phones = arr(word["phonemes"], path + ".phonemes")
+                    if not phones:
+                        error(path + ".phonemes", "must be a non-empty array when present")
+                    for phone_index, phone in enumerate(phones):
+                        string(phone, f"{path}.phonemes[{phone_index}]")
     for index, warning in enumerate(arr(package.get("warnings"), "warnings")):
         if not isinstance(warning, str):
             error(f"warnings[{index}]", "must be a string")

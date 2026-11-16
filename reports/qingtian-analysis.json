@@ -1,6 +1,7 @@
 {
   "date": "2026-11-16",
   "track_id": "qingtian",
+  "config": "config/full.json",
   "audio": {
     "source_sha256": "0c1a866751042dae234794a45736c52c13a89994da9fccea838cc91ede2d8511",
     "duration_seconds": 269.747208,
@@ -12,9 +13,13 @@
     "platform": "macOS ARM64",
     "chip": "Apple M5",
     "memory_gb": 16,
-    "inference_device": "CPU"
+    "inference_devices": {
+      "qwen2_audio": "MLX Metal GPU",
+      "other_models": "CPU"
+    }
   },
   "status": "partial",
+  "status_reason": "Only melody is partial: automatic vocal-priority and instrumental-gap candidates are not guaranteed intended lead melody.",
   "counts": {
     "notes": 901,
     "chord_segments": 165,
@@ -22,32 +27,38 @@
     "downbeats": 77,
     "sections": 21,
     "description_segments": 21,
-    "genre_segments": 19,
+    "genre_segments": 21,
     "instrument_segments": 21,
-    "emotion_segments": 21
+    "emotion_segments": 21,
+    "lyrics_lines": 50,
+    "aligned_word_units": 494,
+    "background_entries": 0
   },
   "tasks": {
     "separation": {
       "status": "succeeded",
-      "duration_seconds": 83.326,
-      "cached": false,
       "engine": "demucs",
-      "model_id": "htdemucs"
+      "model_id": "htdemucs",
+      "measured_task_duration_seconds": 88.665,
+      "measurement_run": "core_model_run",
+      "cached_in_full_configuration_first_run": true
     },
     "rhythm": {
       "status": "succeeded",
-      "duration_seconds": 9.452,
-      "cached": false,
       "engine": "beat_this",
       "model_id": "final0",
+      "measured_task_duration_seconds": 9.412,
+      "measurement_run": "core_model_run",
+      "cached_in_full_configuration_first_run": true,
       "model_sha256": "8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331"
     },
     "sections": {
       "status": "succeeded",
-      "duration_seconds": 377.746,
-      "cached": false,
       "engine": "allin1",
       "model_id": "harmonix-all",
+      "measured_task_duration_seconds": 394.438,
+      "measurement_run": "core_model_run",
+      "cached_in_full_configuration_first_run": true,
       "model_sha256": {
         "harmonix-fold0-0vra4ys2.pth": "0db596dfb0995f41d62f6267d76a9d54c046f1649bd35e1dbeca0c5f9a7b8acd",
         "harmonix-fold1-3ozjhtsj.pth": "607b4864eaabccd4f6951410d5ea6676666ad1cfa6ce2e18bc99f3824b77c3b7",
@@ -62,41 +73,206 @@
     },
     "melody": {
       "status": "partial",
-      "duration_seconds": 37.355,
-      "cached": false,
       "engine": "basic-pitch+torchcrepe",
       "model_id": "icassp_2022",
+      "measured_task_duration_seconds": 39.165,
+      "measurement_run": "core_model_run",
+      "cached_in_full_configuration_first_run": true,
       "model_sha256": "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec"
     },
     "harmony": {
       "status": "succeeded",
-      "duration_seconds": 2.755,
-      "cached": false,
       "engine": "BTC-ISMIR19",
       "model_id": "btc_model_large_voca",
+      "measured_task_duration_seconds": 3.017,
+      "measurement_run": "core_model_run",
+      "cached_in_full_configuration_first_run": true,
       "model_sha256": "1673d23f8f9a55ae7f9e8b80a51da616debb22675b8d8b67ea6ce0ef37b0ab51"
     },
     "descriptions": {
-      "status": "partial",
-      "duration_seconds": 42.169,
-      "cached": false,
-      "engine": "scipy_acoustic_features+essentia+music2emo",
-      "model_id": "MTG/Discogs-EffNet+configured-classification-heads+AMAAI-Lab/Music2Emotion:J_all+m-a-p/MERT-v1-95M"
+      "status": "succeeded",
+      "engine": "scipy_acoustic_features+essentia+music2emo+qwen2_audio",
+      "model_id": "Essentia Discogs-EffNet + Music2Emotion J_all / MERT-v1-95M + mlx-community/Qwen2-Audio-7B-Instruct-4bit",
+      "measured_task_duration_seconds": 247.665,
+      "measurement_run": "full_configuration_first_run",
+      "cached_in_full_configuration_first_run": false
     },
     "lyrics_context": {
-      "status": "skipped",
-      "duration_seconds": 0.041,
-      "cached": false,
-      "engine": "supplied_text_extractive",
-      "model_id": null
+      "status": "succeeded",
+      "engine": "SOFA+supplied_text_extractive",
+      "model_id": "qiuqiao/SOFA:v1.0.0_mandarin_singing",
+      "measured_task_duration_seconds": 7.733,
+      "measurement_run": "full_configuration_first_run",
+      "cached_in_full_configuration_first_run": false
     }
+  },
+  "run_measurement_scope": {
+    "core_model_run_id": "20261116T065455Z-74406c9c",
+    "full_configuration_first_run_id": "20261116T072855Z-db081d99",
+    "full_configuration_first_run_cache_hits": 5,
+    "final_repeat_cache_hits": 7,
+    "final_repeat_task_count": 7,
+    "single_cold_full_pipeline_wall_time_seconds": null,
+    "note": "Task durations are reported from two separate runs; they must not be summed and presented as one full-run wall time. They exclude environment setup and initial model acquisition."
+  },
+  "models": {
+    "essentia": {
+      "status": "succeeded",
+      "counts": {
+        "requested": 21,
+        "succeeded": 21,
+        "failed": 0,
+        "rejected": 0,
+        "missing": 0
+      },
+      "model_id": "MTG/Discogs-EffNet+configured-classification-heads",
+      "files": [
+        {
+          "filename": "discogs-effnet-bs64-1.pb",
+          "sha256": "3ed9af50d5367c0b9c795b294b00e7599e4943244f4cbd376869f3bfc87721b1"
+        },
+        {
+          "filename": "genre_discogs400-discogs-effnet-1.pb",
+          "sha256": "3885ba078a35249af94b8e5e4247689afac40deca4401a4bc888daf5a579c01c"
+        },
+        {
+          "filename": "genre_discogs400-discogs-effnet-1.json",
+          "sha256": "2d367319d9b782ffa10f69abf0e805b3ac4e10899025e5bdbaceda3919b243e0"
+        },
+        {
+          "filename": "mtg_jamendo_instrument-discogs-effnet-1.pb",
+          "sha256": "2e8c3003c722e098da371b6a1f7ad0ce62fac0dcfc09c7c7997d430941196c2a"
+        },
+        {
+          "filename": "mtg_jamendo_instrument-discogs-effnet-1.json",
+          "sha256": "7d02204c6451b5615e2968ec6364bbae3b915c886e608f05f00d3a38dc5177c4"
+        }
+      ]
+    },
+    "music2emo": {
+      "source_revision": "c5f7984f78d9928b841f25bd05a47377c12c58ca",
+      "status": "succeeded",
+      "counts": {
+        "requested": 21,
+        "succeeded": 21,
+        "failed": 0,
+        "rejected": 0,
+        "missing": 0
+      },
+      "model_id": "AMAAI-Lab/Music2Emotion:J_all+m-a-p/MERT-v1-95M",
+      "files": [
+        {
+          "filename": "J_all.ckpt",
+          "sha256": "deaceb291f7974deb688167d3639b7f6eb66eb0715824668618393777d1e07a5"
+        }
+      ],
+      "mert_source": {
+        "model_id": "m-a-p/MERT-v1-95M",
+        "cached_snapshot_revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5",
+        "source_url": "https://huggingface.co/m-a-p/MERT-v1-95M/tree/12af15fef9d0ac838c3f475bfbbf26d2060dd4f5",
+        "revision_capture": "setup cache; upstream loader is not pinned by this adapter"
+      }
+    },
+    "qwen2_audio": {
+      "status": "succeeded",
+      "counts": {
+        "requested": 21,
+        "succeeded": 21,
+        "failed": 0,
+        "rejected": 0,
+        "missing": 0,
+        "generated": 21
+      },
+      "model_id": "mlx-community/Qwen2-Audio-7B-Instruct-4bit",
+      "files": [],
+      "runtime": {
+        "engine": "qwen2_audio_mlx",
+        "device": "Device(gpu, 0)",
+        "base_model": "Qwen/Qwen2-Audio-7B-Instruct",
+        "model_revision": "c65570002626f41b4dc08b7b54f42f99f3e82e7f",
+        "model_sha256": "0967cde270ad62aa4824f0bbce283d0a2a6da2825ccf587640753c527d4174da",
+        "quantization": {
+          "group_size": 64,
+          "bits": 4
+        },
+        "audio_encoder_quantized": false,
+        "projector_quantized": false,
+        "mlx_audio_revision": "b5fcbe964b9e4cad4b06782f97d3e51fe74a8702",
+        "versions": {
+          "mlx": "0.32.4",
+          "mlx-audio": "0.6.5",
+          "transformers": "5.23.0"
+        },
+        "audio_frontend": "WhisperFeatureExtractor+effective_length+padding_key_mask+float_projector",
+        "temperature": 0.0,
+        "max_new_tokens": 256,
+        "labels_are": "unverified_candidates"
+      }
+    },
+    "sofa": {
+      "source_revision": "9549c6a86d16019c817eefe4bb8183405da524cc",
+      "model_id": "qiuqiao/SOFA:v1.0.0_mandarin_singing",
+      "device": "cpu",
+      "threads": 2,
+      "versions": {
+        "torch": "2.5.1",
+        "lightning": "2.4.0"
+      },
+      "elapsed_seconds": 3.3935101667884737,
+      "alignment_confidence": 0.40633785383029913,
+      "confidence_interpretation": "upstream alignment score, not calibrated correctness probability",
+      "word_count": 494,
+      "checkpoint_sha256": "612cb69ef3503befc43286f0d90893b4b3ad959df07ed08799dba2bea69d2b51",
+      "dictionary_sha256": "e912ee4ec1d87fcdfd8b82c0a8f3999f0db7fd731bec08435256b621ebebb5a1",
+      "effective_dictionary_sha256": "dd1e3a967ce2258787e86b0cdf277c25a59284fa95a3573189f35ae068e8fc5d",
+      "g2p": "mandarin",
+      "analysis_start": 0.0,
+      "analysis_end": 269.747208,
+      "alignment_mode": "whole_audio_force",
+      "reference_timing_used": false,
+      "input_audio": "vocals",
+      "pronunciation_approximation_types": 5,
+      "pronunciation_limitation": "Latin solfege is retained and aligned with explicit Mandarin-model phoneme approximations; no claim of exact phonetic equivalence.",
+      "source": {
+        "text_sha256": "159507cfb9cb01fa16cd3acf5b9253002ec2e28d5e1abc8bb0680b61f7dae0fb",
+        "source_type": "public_provider_lyrics",
+        "verification_status": "text_hash_verified_content_unverified",
+        "source_url": "https://www.kugou.com/song-36/c7i2yb5.html"
+      }
+    }
+  },
+  "qwen_audit": {
+    "segments": 21,
+    "statuses": {
+      "generated": 21
+    },
+    "generation_attempts": 33,
+    "segments_with_retry": 12,
+    "segments_with_normalization": 21,
+    "normalization_operations": {
+      "unescape_json_quotes_once": 33
+    },
+    "max_mlx_peak_memory_bytes": 7197100746,
+    "memory_scope": "maximum MLX allocator-reported peak over segment audits; not whole-process RSS or total system usage"
+  },
+  "sofa_provider_diagnostic": {
+    "comparison": "independent provider LRC; not human-annotated ground truth",
+    "source_url": "https://www.kugou.com/song-36/c7i2yb5.html",
+    "reference_timing_used_for_alignment": false,
+    "matching": "original line order and normalized text equality, including repeated lines",
+    "matched_lines": 50,
+    "mean_absolute_start_difference_seconds": 0.1645982740000001,
+    "median_absolute_start_difference_seconds": 0.1528123000000079,
+    "p95_absolute_start_difference_seconds": 0.3052560099999976,
+    "max_absolute_start_difference_seconds": 0.466508300000001,
+    "mean_signed_start_difference_seconds": -0.1547253780000007,
+    "within_0_5_seconds": 50
   },
   "warnings": [
     "rhythm: Beat grouping is estimated; a full notated time signature is not inferred from beat count alone.",
     "melody: Automatic vocal-priority melody selection is an estimate, not a guaranteed lead-vocal transcription.",
     "melody: Long vocal gaps use a periodic other-stem candidate; this does not establish which instrument carries the intended melody.",
-    "descriptions: Unresolved fields remain unknown: genre (2/21 segments).",
-    "lyrics_context: No supplied lyrics or song background; semantic content is not fabricated."
+    "lyrics_context: Theme/imagery labels are lexical candidates with evidence, not inferred author intent."
   ],
   "sections": [
     {
@@ -254,14 +430,14 @@
     {
       "id": "section_020",
       "start": 252.95,
-      "end": 266.32,
+      "end": 266.58,
       "label": "chorus",
       "source": "allin1",
       "status": "estimated"
     },
     {
       "id": "section_021",
-      "start": 266.32,
+      "start": 266.58,
       "end": 269.747208,
       "label": "end",
       "source": "allin1",
@@ -284,8 +460,55 @@
     "allin1": "1.1.0",
     "essentia": null,
     "transformers": "4.44.2",
-    "music2emo": null
+    "music2emo": null,
+    "essentia-tensorflow": "2.1b6.dev1389"
+  },
+  "validation": {
+    "first_full_schema_passed": true,
+    "first_full_semantics_passed": true,
+    "final_cached_schema_passed": true,
+    "final_cached_semantics_passed": true
   },
   "accuracy_evaluation": "not_measured_no_ground_truth",
-  "raw_audio_uploaded": false
+  "privacy": {
+    "raw_audio_uploaded": false,
+    "stems_uploaded": false,
+    "lyrics_text_published": false,
+    "derived_lyric_semantic_text_published": false,
+    "absolute_local_paths_published": false
+  },
+  "automated_tests": {
+    "main": {
+      "total": 108,
+      "passed": 107,
+      "skipped": 1,
+      "skip_reason": "MLX numerical test runs in dedicated environment"
+    },
+    "qwen_environment": {
+      "total": 10,
+      "passed": 10
+    }
+  },
+  "browser_validation": {
+    "lyricChecks": {
+      "lineMatch": true,
+      "wordMatch": true,
+      "sourceShown": true,
+      "gapCleared": true,
+      "lines": 50,
+      "words": 494
+    },
+    "status": "部分结果 / 有回退",
+    "initial": {
+      "ready": 4,
+      "duration": 269.747208
+    },
+    "sought": 90,
+    "played": 90.319828,
+    "clicked": 130.635431,
+    "jsErrors": [],
+    "externalRequests": [],
+    "mobileOverflow": false,
+    "preview": "reports/assets/analysis-preview.png"
+  }
 }

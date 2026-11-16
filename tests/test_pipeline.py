@@ -12,7 +12,7 @@ from unittest.mock import patch
 from musicprep.config import load_config, TASKS
 from musicprep.pipeline import (atomic_json, assemble_package, configured_file_hashes, object_hash,
                                 output_lock, run_process, execute_task, configured_python_environments,
-                                probe_python_environment, cache_artifacts_valid)
+                                probe_python_environment, cache_artifacts_valid, task_implementation_hash, TASK_CODE_FILES)
 from musicprep.audio import sha256_file
 
 
@@ -32,10 +32,48 @@ class PipelineTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     load_config(path)
 
+    def test_task_timeout_override_is_validated_and_used(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "config.json"
+            for value in (True, 0, float("inf"), "long"):
+                path.write_text(json.dumps({"tasks": {"descriptions": {"timeout_seconds": value}}}))
+                with self.assertRaises(ValueError):
+                    load_config(path)
+            context = {"config": {"timeout_seconds": 7500}, "dependencies": {}}
+            def run(command, log, timeout, env):
+                self.assertEqual(timeout, 7500)
+                Path(command[-1]).write_text(json.dumps({"status": "succeeded", "data": {}, "provenance": {}, "warnings": []}))
+                return 0, False
+            with patch("musicprep.pipeline.run_process", side_effect=run):
+                result, _ = execute_task("descriptions", context, folder, {"retries": 0, "timeout_seconds": 3600}, {})
+            self.assertEqual(result["status"], "succeeded")
+
     def test_baseline_config_copies_defaults(self):
         baseline = load_config(profile="baseline")
         self.assertTrue(all(p["backend"] == "baseline" for p in baseline["tasks"].values()))
         self.assertEqual(load_config()["tasks"]["melody"]["backend"], "auto")
+
+    def test_model_id_resolves_local_paths_but_preserves_hub_ids(self):
+        with tempfile.TemporaryDirectory() as folder:
+            base = Path(folder)
+            path = base / "config.json"
+            for model_id in ("../models/qwen", "~/models/qwen", "Qwen/Qwen2-Audio-7B-Instruct"):
+                path.write_text(json.dumps({"tasks": {"descriptions": {"model_backends": {"qwen2_audio": {"model_id": model_id}}}}}))
+                actual = load_config(path)["tasks"]["descriptions"]["model_backends"]["qwen2_audio"]["model_id"]
+                if model_id.startswith("Qwen/"):
+                    self.assertEqual(actual, model_id)
+                else:
+                    self.assertTrue(Path(actual).is_absolute())
+                    self.assertNotIn("~", actual)
+
+    def test_supplied_lyrics_failure_keeps_package_partial(self):
+        manifest = {"source": {"sha256": "a" * 64}, "canonical": {"duration_seconds": 10, "sample_rate": 44100, "channels": 2}}
+        records = {task: {"status": "succeeded"} for task in TASKS}
+        for status in ("failed", "partial"):
+            records["lyrics_context"]["status"] = status
+            self.assertEqual(assemble_package("x", manifest, {}, records, "run")["run"]["status"], "partial")
+        records["lyrics_context"]["status"] = "skipped"
+        self.assertEqual(assemble_package("x", manifest, {}, records, "run")["run"]["status"], "complete")
 
     def test_config_file_content_changes_fingerprint(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -214,6 +252,81 @@ class PipelineTests(unittest.TestCase):
             self.assertFalse(cache_artifacts_valid(result))
             for malformed in (None, [], {"artifacts": [None]}, {"data": []}):
                 self.assertFalse(cache_artifacts_valid(malformed))
+
+    def test_task_code_fingerprints_exclude_unrelated_ui_and_adapter_changes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            files = {"__init__.py", "worker.py", "adapters/__init__.py"}
+            for names in TASK_CODE_FILES.values():
+                files.update(names)
+            for name in files:
+                path = root / name; path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("# initial " + name)
+            initial = {task: task_implementation_hash(task, root) for task in TASKS}
+            for name in ("report.py", "validation.py", "cli.py", "pipeline.py"):
+                (root / name).write_text("# cosmetic/report/assembly change")
+            self.assertEqual(initial, {task: task_implementation_hash(task, root) for task in TASKS})
+            (root / "adapters/descriptions.py").write_text("# new aggregation")
+            changed = {task: task_implementation_hash(task, root) for task in TASKS}
+            self.assertEqual({task for task in TASKS if initial[task] != changed[task]},
+                             {"descriptions", "lyrics_context"})
+            (root / "adapters/qwen.py").write_text("# newly added model adapter")
+            added = {task: task_implementation_hash(task, root) for task in TASKS}
+            self.assertEqual({task for task in TASKS if changed[task] != added[task]},
+                             {"descriptions", "lyrics_context"})
+            (root / "worker.py").write_text("# execution behavior changed")
+            self.assertTrue(all(task_implementation_hash(task, root) != added[task] for task in TASKS))
+
+    def test_optional_text_change_only_invalidates_lyrics_task(self):
+        with tempfile.TemporaryDirectory() as folder:
+            context = {"config": {"backend": "baseline"}, "dependencies": {}, "input_hashes": {}}
+            calls = []
+            def fake_process(command, *args):
+                calls.append(command[3])
+                Path(command[-1]).write_text(json.dumps({"status": "partial", "data": {}, "warnings": [], "provenance": {}}))
+                return 0, False
+            environment = {"worker": {"status": "ok", "package_versions_sha256": "stable"}}
+            with patch("musicprep.pipeline.run_process", fake_process), patch("musicprep.pipeline.configured_python_environments", return_value=environment):
+                records = {}
+                for task in ("rhythm", "descriptions", "lyrics_context"):
+                    _, records[task] = execute_task(task, context, folder, {"retries": 0, "timeout_seconds": 10}, {})
+                changed = copy.deepcopy(context)
+                changed["input_hashes"] = {"lyrics": "new-lyrics", "background": "new-background"}
+                for task in ("rhythm", "descriptions", "lyrics_context"):
+                    _, record = execute_task(task, changed, folder, {"retries": 0, "timeout_seconds": 10}, {})
+                    self.assertEqual(record["cached"], task != "lyrics_context")
+                    self.assertEqual(record["cache_key"] == records[task]["cache_key"], task != "lyrics_context")
+            self.assertEqual(calls.count("rhythm"), 1)
+            self.assertEqual(calls.count("descriptions"), 1)
+            self.assertEqual(calls.count("lyrics_context"), 2)
+
+    def test_task_implementation_change_invalidates_only_that_task(self):
+        with tempfile.TemporaryDirectory() as folder:
+            context = {"config": {}, "dependencies": {}}
+            calls = []
+            def fake_process(command, *args):
+                calls.append(command[3])
+                Path(command[-1]).write_text(json.dumps({"status": "succeeded", "data": {}, "warnings": [], "provenance": {}}))
+                return 0, False
+            code = {"rhythm": "rhythm-v1", "descriptions": "descriptions-v1"}
+            with patch("musicprep.pipeline.run_process", fake_process), patch("musicprep.pipeline.task_implementation_hash", side_effect=lambda task: code[task]):
+                for task in code:
+                    execute_task(task, context, folder, {"retries": 0, "timeout_seconds": 10}, {})
+                code["descriptions"] = "descriptions-v2"
+                _, rhythm = execute_task("rhythm", context, folder, {"retries": 0, "timeout_seconds": 10}, {})
+                _, descriptions = execute_task("descriptions", context, folder, {"retries": 0, "timeout_seconds": 10}, {})
+            self.assertTrue(rhythm["cached"])
+            self.assertFalse(descriptions["cached"])
+            self.assertEqual(calls.count("rhythm"), 1)
+            self.assertEqual(calls.count("descriptions"), 2)
+
+    def test_local_model_id_directory_weights_are_fingerprinted(self):
+        with tempfile.TemporaryDirectory() as folder:
+            model = Path(folder) / "qwen"; model.mkdir()
+            weight = model / "model-00001.safetensors"; weight.write_bytes(b"weights-v1")
+            first = configured_file_hashes({"model_backends": {"qwen2_audio": {"model_id": str(model)}}})
+            weight.write_bytes(b"weights-v2")
+            self.assertNotEqual(first, configured_file_hashes({"model_backends": {"qwen2_audio": {"model_id": str(model)}}}))
 
 
 if __name__ == "__main__":

@@ -23,6 +23,8 @@ import soundfile as sf
 
 
 def _finite(value, name):
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a number, not boolean")
     number = float(value)
     if not math.isfinite(number):
         raise ValueError(f"{name} must be finite")
@@ -137,6 +139,8 @@ def _tags(value, field):
 def _validate_model_result(result, engine):
     if not isinstance(result, dict):
         raise ValueError("model result must be an object")
+    if engine == "qwen2_audio" and (set(result) - {"genre", "instruments", "textures"}):
+        raise ValueError("Qwen2-Audio may only provide audio-description candidates, not emotion scores or external facts")
     clean = {}
     for field in ("genre", "instruments", "textures"):
         if field in result:
@@ -193,12 +197,20 @@ def _run_model_batch(engine, cfg, entries, work):
     if not cfg.get("allow_download", False):
         env["HF_HUB_OFFLINE"] = "1"
         env["TRANSFORMERS_OFFLINE"] = "1"
+    worker_error = None
     with log_path.open("w", encoding="utf-8") as log:
-        subprocess.run(args, cwd=directory, env=env, stdout=log, stderr=log, check=True,
-                       timeout=float(cfg.get("timeout_seconds", 1800)))
+        try:
+            subprocess.run(args, cwd=directory, env=env, stdout=log, stderr=log, check=True,
+                           timeout=float(cfg.get("timeout_seconds", 1800)))
+        except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+            if not output.is_file():
+                raise
+            worker_error = f"{type(exc).__name__}: {exc}"
     result = json.loads(output.read_text(encoding="utf-8"))
     if not isinstance(result, dict) or not isinstance(result.get("results"), list):
         raise ValueError("model worker result must contain a results array")
+    if worker_error:
+        result["worker_error"] = worker_error
     return result, str(log_path)
 
 
@@ -237,6 +249,23 @@ def run_descriptions(ctx):
     if backend not in allowed:
         raise ValueError(f"unsupported descriptions backend: {backend}")
     sections, warnings = _sections(ctx)
+    configured = cfg.get("model_backends", {})
+    if not isinstance(configured, dict):
+        raise ValueError("model_backends must be an object")
+    unknown = set(configured) - {"essentia", "music2emo", "qwen2_audio"}
+    if unknown:
+        raise ValueError(f"Unknown description model backends: {sorted(unknown)}")
+    if "qwen2_audio" in configured and backend in {"auto", "models", "qwen2_audio"}:
+        # Every model describes the same bounded interval. Retain the original
+        # structural section ID; a long chorus need not be truncated to 30 s.
+        windows = []
+        for section in sections:
+            count = max(1, math.ceil((section["end"] - section["start"]) / 30))
+            width = (section["end"] - section["start"]) / count
+            for index in range(count):
+                windows.append(dict(section, start=section["start"] + index * width,
+                                    end=section["end"] if index == count - 1 else section["start"] + (index + 1) * width))
+        sections = windows
     work = Path(ctx["work_dir"]).resolve()
     work.mkdir(parents=True, exist_ok=True)
     segments, entries = [], []
@@ -245,7 +274,7 @@ def run_descriptions(ctx):
                   "analysis_end": section["end"], "applies_start": section["start"],
                   "applies_end": section["end"], "genre": [], "instruments": [], "textures": [],
                   "emotion": {"valence": None, "arousal": None, "scale": None,
-                              "moods": [], "status": "unknown"}, "status": "partial"}
+                              "moods": [], "status": "unknown"}, "status": "partial", "model_results": {}}
         try:
             audio, sr = _read_clip(ctx["audio_path"], section["start"], section["end"])
             record["acoustic_features"], record["textures"] = acoustic_features(audio, sr)
@@ -256,9 +285,6 @@ def run_descriptions(ctx):
             warnings.append(f"section {section['id']}: acoustic analysis failed: {exc}")
             record["status"] = "failed"
         segments.append(record)
-    configured = cfg.get("model_backends", {})
-    if not isinstance(configured, dict):
-        raise ValueError("model_backends must be an object")
     engines = [] if backend == "baseline" else [name for name in ("essentia", "music2emo", "qwen2_audio")
                                                if name in configured and (backend in {"auto", "models"} or name == backend)]
     if backend not in {"auto", "baseline", "models"} and backend not in configured:
@@ -271,37 +297,73 @@ def run_descriptions(ctx):
                   "texture_thresholds": {"bright_centroid_hz": 2800, "dark_centroid_hz": 1100,
                   "noise_flatness": 0.15, "steady_envelope_cv": 0.12}}
     for engine in engines:
+        expected = {entry["index"] for entry in entries}
+        accepted, seen = set(), set()
+        counts = {"requested": len(expected), "succeeded": 0, "failed": 0, "rejected": 0, "missing": 0}
         try:
             results, log = _run_model_batch(engine, configured[engine], entries, work)
             provenance["models"][engine] = dict(_model_provenance(engine, configured[engine]),
-                                                status="executed", log_path=log)
-            seen = set()
+                                                status="running", log_path=log, counts=counts,
+                                                runtime=results.get("provenance", {}))
             for item in results.get("results", []):
+                index = None
                 try:
                     index = item["index"]
-                    if not isinstance(index, int) or index not in {e["index"] for e in entries} or index in seen:
+                    if isinstance(index, bool) or not isinstance(index, int) or index not in expected or index in seen:
                         raise ValueError("invalid or duplicate segment index")
                     seen.add(index)
                     if "error" in item:
-                        raise ValueError(str(item["error"]))
+                        counts["failed"] += 1
+                        segments[index]["model_results"][engine] = {"status": "failed", "error": str(item["error"])}
+                        warnings.append(f"{engine} segment {index} failed: {item['error']}")
+                        continue
                     clean = _validate_model_result(item["data"], engine)
-                    if "textures" in clean:
-                        clean["textures"] = segments[index]["textures"] + clean["textures"]
-                    segments[index].update(clean)
+                    # Keep evidence by model and preserve prior classifications.
+                    # Empty/contradictory generated labels must not erase Essentia.
+                    segments[index]["model_results"][engine] = {"status": "succeeded", "data": clean}
+                    if item.get("inference_status") in ("generated", "silent_audio"):
+                        inference_status = item["inference_status"]
+                        segments[index]["model_results"][engine]["inference_status"] = inference_status
+                        counts[inference_status] = counts.get(inference_status, 0) + 1
+                    for field in ("genre", "instruments", "textures"):
+                        if field in clean:
+                            existing = {(tag.get("source"), tag["label"]) for tag in segments[index][field]}
+                            segments[index][field].extend(tag for tag in clean[field] if (tag.get("source"), tag["label"]) not in existing)
+                    if "emotion" in clean:
+                        segments[index]["emotion"] = clean["emotion"]
+                    accepted.add(index)
+                    counts["succeeded"] += 1
                 except (ValueError, KeyError, TypeError) as exc:
+                    counts["rejected"] += 1
+                    if isinstance(index, int) and not isinstance(index, bool) and index in expected and index not in accepted:
+                        segments[index]["model_results"][engine] = {"status": "rejected", "error": str(exc)}
                     warnings.append(f"{engine} segment result rejected: {exc}")
-            missing = {e["index"] for e in entries} - seen
+            missing = expected - seen
+            counts["missing"] = len(missing)
             if missing:
+                for index in missing:
+                    segments[index]["model_results"][engine] = {"status": "missing"}
                 warnings.append(f"{engine} did not return {len(missing)} segment(s).")
+            if results.get("worker_error"):
+                provenance["models"][engine]["worker_error"] = str(results["worker_error"])
+                warnings.append(f"{engine} worker terminated; completed segments retained: {results['worker_error']}")
+            model_complete = bool(expected) and accepted == expected and not counts["rejected"] and not results.get("worker_error")
+            provenance["models"][engine]["status"] = "succeeded" if model_complete else "partial" if accepted else "failed"
+            if not model_complete and not cfg.get("fallback", True):
+                raise ValueError(f"{engine} failed to produce valid results for all requested segments")
         except (OSError, subprocess.SubprocessError, ValueError) as exc:
             if not cfg.get("fallback", True):
                 raise
             warnings.append(f"{engine} unavailable/failed: {type(exc).__name__}: {exc}")
-            provenance["models"][engine] = {"status": "failed"}
+            counts["failed"] = max(counts["failed"], len(expected) - len(accepted))
+            provenance["models"][engine] = dict(_model_provenance(engine, configured[engine]), status="failed", counts=counts, error=str(exc))
+            for index in expected - accepted:
+                segments[index]["model_results"][engine] = {"status": "failed", "error": str(exc)}
     for segment in segments:
-        if segment["genre"] and segment["instruments"] and segment["emotion"]["status"] == "estimated":
+        models_ok = all(segment["model_results"].get(engine, {}).get("status") == "succeeded" for engine in engines)
+        if models_ok and segment["genre"] and segment["instruments"] and segment["emotion"]["status"] == "estimated":
             segment["status"] = "succeeded"
-    complete = bool(segments) and all(s["status"] == "succeeded" for s in segments)
+    complete = bool(segments) and all(s["status"] == "succeeded" for s in segments) and all(m["status"] == "succeeded" for m in provenance["models"].values())
     missing = []
     for field in ("genre", "instruments", "emotion"):
         count = sum((segment[field].get("status") != "estimated" if field == "emotion" else not segment[field])
@@ -310,7 +372,7 @@ def run_descriptions(ctx):
             missing.append(f"{field} ({count}/{len(segments)} segments)")
     if missing:
         warnings.append("Unresolved fields remain unknown: " + ", ".join(missing) + ".")
-    executed = [name for name, model in provenance["models"].items() if model["status"] == "executed"]
+    executed = [name for name, model in provenance["models"].items() if model.get("counts", {}).get("succeeded", 0)]
     if executed:
         provenance["engine"] = "+".join(["scipy_acoustic_features", *executed])
         provenance["model_id"] = "+".join(provenance["models"][name]["model_id"] for name in executed)
@@ -380,6 +442,9 @@ def _essentia_predictor(cfg, root):
 
 
 def _qwen_predictor(cfg, root):
+    if cfg.get("runtime") == "mlx":
+        from musicprep.adapters.qwen import make_predictor
+        return make_predictor(cfg, root)
     import torch
     from transformers import AutoProcessor, Qwen2AudioForConditionalGeneration
     model_id = cfg.get("model_id", "Qwen/Qwen2-Audio-7B-Instruct")
@@ -409,6 +474,8 @@ def _qwen_predictor(cfg, root):
 
 
 def _worker(engine, request_path, output_path):
+    # Script execution in a dedicated model venv still imports this source tree.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     request = json.loads(Path(request_path).read_text(encoding="utf-8"))
     root = Path.cwd().resolve()
     factory = {"music2emo": _music2emo_predictor, "essentia": _essentia_predictor,
@@ -420,7 +487,13 @@ def _worker(engine, request_path, output_path):
             results.append({"index": entry["index"], "data": predict(entry["audio_path"])})
         except Exception as exc:  # Individual model inference errors must not drop other sections.
             results.append({"index": entry["index"], "error": f"{type(exc).__name__}: {exc}"})
-        Path(output_path).write_text(json.dumps({"results": results}, ensure_ascii=False, allow_nan=False), encoding="utf-8")
+        audit = getattr(predict, "audit", None)
+        if isinstance(audit, dict) and audit.get("status") in ("generated", "silent_audio", "failed"):
+            results[-1]["inference_status"] = audit["status"]
+        output = Path(output_path)
+        temporary = output.with_suffix(output.suffix + ".tmp")
+        temporary.write_text(json.dumps({"results": results, "provenance": getattr(predict, "provenance", {})}, ensure_ascii=False, allow_nan=False), encoding="utf-8")
+        temporary.replace(output)
 
 
 if __name__ == "__main__":

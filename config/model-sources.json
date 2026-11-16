@@ -13,6 +13,14 @@
       "path": "vendor/Music2Emotion",
       "url": "https://github.com/AMAAI-Lab/Music2Emotion.git",
       "revision": "c5f7984f78d9928b841f25bd05a47377c12c58ca"
+    },
+    {
+      "id": "sofa",
+      "group": "sofa",
+      "path": "vendor/SOFA",
+      "url": "https://github.com/qiuqiao/SOFA.git",
+      "revision": "9549c6a86d16019c817eefe4bb8183405da524cc",
+      "setup_script": "scripts/setup_sofa.py"
     }
   ],
   "files": [
@@ -57,6 +65,24 @@
       "path": "essentia/mtg_jamendo_instrument-discogs-effnet-1.pb",
       "url": "https://essentia.upf.edu/models/classification-heads/mtg_jamendo_instrument/mtg_jamendo_instrument-discogs-effnet-1.pb",
       "sha256": "2e8c3003c722e098da371b6a1f7ad0ce62fac0dcfc09c7c7997d430941196c2a"
+    },
+    {
+      "id": "qwen2-audio-mlx-4bit",
+      "group": "qwen",
+      "path": "qwen2-audio-mlx-4bit/weights.safetensors",
+      "url": "https://huggingface.co/mlx-community/Qwen2-Audio-7B-Instruct-4bit/resolve/c65570002626f41b4dc08b7b54f42f99f3e82e7f/weights.safetensors",
+      "sha256": "0967cde270ad62aa4824f0bbce283d0a2a6da2825ccf587640753c527d4174da",
+      "bytes": 6562540479,
+      "setup_script": "scripts/setup_qwen.py"
+    },
+    {
+      "id": "sofa-mandarin-singing-archive",
+      "group": "sofa",
+      "path": "sofa/pretrained_mandarin_singing.zip",
+      "url": "https://github.com/qiuqiao/SOFA/releases/download/v1.0.1/pretrained_mandarin_singing.zip",
+      "sha256": "63a8c6191fe6bdf29ac40af2955ef96816b8391596d94a4340e0f58dcf47f26e",
+      "extracted_checkpoint_sha256": "612cb69ef3503befc43286f0d90893b4b3ad959df07ed08799dba2bea69d2b51",
+      "setup_script": "scripts/setup_sofa.py"
     }
   ]
 }

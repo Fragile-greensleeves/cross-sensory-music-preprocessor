@@ -1,4 +1,7 @@
 import tempfile
+import json
+import hashlib
+import subprocess
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -6,7 +9,7 @@ from unittest.mock import patch
 import numpy as np
 import soundfile as sf
 
-from musicprep.adapters.lyrics import run_lyrics_context
+from musicprep.adapters.lyrics import run_lyrics_context, _sofa_tokens, _read_sofa_words
 
 
 class LyricsTests(unittest.TestCase):
@@ -95,8 +98,17 @@ class LyricsTests(unittest.TestCase):
         self.ctx["config"] = {"backend": "sofa", "sofa": {"repo": str(repo), "checkpoint": str(checkpoint),
                               "dictionary": str(dictionary), "text_type": "pinyin"}}
 
+        real_run = subprocess.run
+
         def run(args, **kwargs):
+            if "--folder" not in args:
+                return real_run(args, **kwargs)
             folder = Path(args[args.index("--folder") + 1])
+            request = json.loads(Path(args[args.index("--request") + 1]).read_text())
+            lines = [{"original_text": row["text"], "units": [{"text": row["text"], "token": row["text"]}]}
+                     for row in request["lyrics"]]
+            (folder / "tokenized.json").write_text(json.dumps({"lines": lines, "approximations": []}))
+            (folder / "model_meta.json").write_text('{"model_id":"test-sofa"}')
             target = folder / "htk/words/lyrics.lab"
             target.parent.mkdir(parents=True)
             target.write_text("10000000 20000000 a\n20000000 30000000 SP\n40000000 50000000 b", encoding="utf-8")
@@ -110,6 +122,35 @@ class LyricsTests(unittest.TestCase):
             result = run_lyrics_context(self.ctx)
         self.assertEqual(result["status"], "partial")
         self.assertTrue(all(item["start"] is None for item in result["data"]["lyrics"]))
+
+    def test_solfege_preserves_original_text_and_uses_explicit_phones(self):
+        dictionary = self.text("phones.txt", "re\tr e\nrei\tr ei\nsi\ts i0\nmi\tm i\nbo\tb o\nla\tl a\ndo\td o\n")
+        lines, lexicon, approximations = _sofa_tokens([{"text": "Re So Si Do"}], dictionary, {"solfege": True})
+        self.assertEqual([unit["text"] for unit in lines[0]["units"]], ["Re", "So", "Si", "Do"])
+        self.assertEqual(lexicon["latin_si"], ["s", "i"])
+        self.assertEqual(lexicon["si"], ["s", "i0"])
+        self.assertEqual(len(approximations), 4)
+        with self.assertRaisesRegex(ValueError, "Unsupported word"):
+            _sofa_tokens([{"text": "Hello"}], dictionary, {"solfege": True})
+
+    def test_sofa_nonlexical_phrase_boundaries_do_not_look_like_words(self):
+        path = self.text("words.lab", "0 0 BND\n10000000 20000000 a\n20000000 30000000 BND\n40000000 50000000 b")
+        self.assertEqual([word["token"] for word in _read_sofa_words(path, 10)], ["a", "b"])
+
+    def test_source_metadata_hash_and_provenance(self):
+        lyrics_path = self.text("source.lrc", "[00:01]sample")
+        digest = hashlib.sha256(Path(lyrics_path).read_bytes()).hexdigest()
+        metadata_path = self.text("source.json", json.dumps({"source_url": "https://example.com/lyrics",
+                                  "text_sha256": digest, "source_type": "public_provider_lyrics"}))
+        self.ctx["optional_inputs"]["lyrics"] = lyrics_path
+        self.ctx["config"]["source_metadata"] = metadata_path
+        result = run_lyrics_context(self.ctx)
+        self.assertEqual(result["data"]["sources"][0]["source_type"], "public_provider_lyrics")
+        self.assertEqual(result["provenance"]["text_source"]["text_sha256"], digest)
+        Path(lyrics_path).write_text("changed")
+        result = run_lyrics_context(self.ctx)
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["data"]["lyrics"], [])
 
 
 if __name__ == "__main__":

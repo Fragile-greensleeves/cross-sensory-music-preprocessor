@@ -15,8 +15,8 @@ flowchart TB
     D --> H["BTC + mir_eval<br/>和弦标签 · 组成音 · 起止"]
     D --> R["Beat This!<br/>拍点 · 第一拍 · 局部速度"]
     D --> S["All-In-One<br/>段落名称与边界"]
-    S --> E["按段落分析完整混音<br/>Essentia：曲风/乐器<br/>Music2Emo：效价/唤醒度<br/>声学特征：质感候选"]
-    B --> L["可选文本<br/>LRC 时间 / SOFA 对齐<br/>主题词 · 意象 · 有来源的背景"]
+    S --> E["按段落分析完整混音<br/>Essentia + Qwen2-Audio：曲风/乐器/质感<br/>Music2Emo：效价/唤醒度"]
+    C --> L["可选歌词 + 人声 → SOFA<br/>字/唱名起止 · 逐行歌词<br/>提取式主题/意象 · 有来源的背景"]
     M --> Q["统一秒数 · 状态与来源 · 校验"]
     H --> Q
     R --> Q
@@ -33,7 +33,7 @@ flowchart TB
     class Q,O output;
 ```
 
-缺失模型自动标记并回退；没有歌词或背景时留空。Qwen2-Audio 与 SOFA 是可选适配器，不是默认运行依赖。[详细架构](docs/architecture.md)
+缺失模型自动标记并回退；没有歌词或背景时留空。`config/full.json` 启用 Qwen2-Audio 与 SOFA；`config/neural.json` 保留较轻的神经分析配置。[详细架构](docs/architecture.md)
 
 ## 已实现
 
@@ -41,12 +41,12 @@ flowchart TB
 |---|---|
 | 完整流水线 | CLI、独立任务进程、超时/重试、缓存恢复、运行日志、环境与模型指纹 |
 | 即时路径 | Demucs、Basic Pitch + torchcrepe/YIN、BTC、Beat This!、All-In-One |
-| 描述路径 | Essentia 曲风/乐器、Music2Emo 效价/唤醒度、声学质感候选 |
-| 可选文本 | LRC/纯文本、提取式主题与意象、带来源背景；SOFA 对齐接口 |
+| 描述路径 | Essentia + Qwen2-Audio 曲风/乐器/质感、Music2Emo 效价/唤醒度 |
+| 可选文本 | LRC/纯文本、SOFA 中文逐字对齐、提取式主题与意象、带来源背景 |
 | 数据与回放 | JSON Schema + 时间语义校验；离线 HTML 音频播放、拖动和同步时间线 |
 | 降级处理 | 基础算法真实计算；实际后端、未知字段与 partial 状态可见 |
 
-已用本地《晴天》整曲和合成音频测试；[实测记录](reports/qingtian-analysis.md)。**链路运行不等于识别准确率达标**：主旋律归属、复杂和弦和描述仍是估计。Qwen2-Audio/SOFA 已有适配代码，本轮未验证其真实权重。
+已用本地《晴天》整曲验证：Qwen 21/21 窗口真实生成，SOFA 对齐 50 行、494 个汉字/唱名单位；[实测记录](reports/qingtian-analysis.md)。**链路运行不等于识别准确率达标**：主旋律归属、复杂和弦和描述仍是估计。完整配置采用独立 MLX / SOFA 环境，模型来源、实际覆盖和限制单独记录。
 
 ## 快速运行：基础版
 
@@ -86,11 +86,25 @@ open work/qingtian-final/report.html
 - `musicprep doctor` 检查环境；`musicprep report package.json --output report.html --audio song.flac` 重建报告。
 - 模型缺失或失败保留实际原因；任务配置 `fallback:false` 可禁用降级。
 
+## 完整配置：Qwen2-Audio + SOFA
+
+在上述神经模型环境基础上，Apple Silicon 可运行：
+
+```sh
+.venv/bin/python scripts/setup_qwen.py
+.venv/bin/python scripts/setup_sofa.py
+.venv/bin/musicprep analyze data/raw/qingtian.flac \
+  --output work/qingtian-full --track-id qingtian \
+  --config config/full.json --lyrics data/raw/qingtian-lyrics.txt
+```
+
+Qwen 使用 6.56 GB 的真实 4-bit 权重，输出按来源保留的曲风、乐器和质感候选；SOFA 用中文演唱模型将无时间歌词对齐到人声。两者各有独立环境，按顺序运行。**SOFA 需要歌词文本，不负责自动听写。** [Qwen 实现](docs/qwen-implementation.md) · [SOFA 实现](docs/sofa-implementation.md)
+
 ## 回放报告
 
 ![本地音乐分析报告](reports/assets/analysis-preview.png)
 
-播放器与原曲时间线同步，支持拖动查看音高、和弦、拍点、段落和描述；全部在本地浏览器运行。
+播放器与原曲时间线同步，支持拖动查看音高、和弦、拍点、段落、描述及逐字歌词；全部在本地浏览器运行。[公开报告（下载后打开）](reports/qingtian-preview.html) 不包含原曲音频或歌词原文。
 
 ## 输出
 

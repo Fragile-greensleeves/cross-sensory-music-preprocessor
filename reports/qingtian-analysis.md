@@ -1,22 +1,22 @@
 # 《晴天》整曲自动分析实测
 
-日期：2026-11-16。输入为用户本地 FLAC，时长 **269.747208 秒**、96 kHz、双声道。原曲及分轨未上传。
+日期：2026-11-16。输入为本地 FLAC，时长 **269.747208 秒**、96 kHz、双声道。使用 `config/full.json`；Apple M5 / 16 GB，Qwen2-Audio 使用 MLX / Metal，其余模型使用 CPU。
 
-配置：`config/neural.json`。设备：Apple M5 / 16 GB / CPU / Python 3.11。流程无需处理中人工干预；音乐结果未手工修订。
+七项任务均已实际运行；**Qwen2-Audio 21/21 个区间生成成功，SOFA 对齐 50 行、494 个字或唱名单位**。流程输入音频与无时间歌词后，无需处理中人工干预。原曲、分轨、歌词全文及其语义摘录不公开。
 
-## 运行结果
+## 运行结果与耗时
 
-| 任务 | 实际后端 | 状态 | 本轮耗时（秒） |
-|---|---|---|---:|
-| separation | demucs | succeeded | 83.33 |
-| rhythm | beat_this | succeeded | 9.45 |
-| sections | allin1 | succeeded | 377.75 |
-| melody | basic-pitch+torchcrepe | partial | 37.35 |
-| harmony | BTC-ISMIR19 | succeeded | 2.75 |
-| descriptions | scipy_acoustic_features+essentia+music2emo | partial | 42.17 |
-| lyrics_context | supplied_text_extractive | skipped | 0.04 |
+| 任务 | 实际后端 | 状态 | 任务耗时（秒） | 测量所属运行 |
+|---|---|---|---:|---|
+| separation | demucs | succeeded | 88.665 | 核心模型实跑 |
+| rhythm | beat_this | succeeded | 9.412 | 核心模型实跑 |
+| sections | allin1 | succeeded | 394.438 | 核心模型实跑 |
+| melody | basic-pitch+torchcrepe | partial | 39.165 | 核心模型实跑 |
+| harmony | BTC-ISMIR19 | succeeded | 3.017 | 核心模型实跑 |
+| descriptions | scipy_acoustic_features+essentia+music2emo+qwen2_audio | succeeded | 247.665 | 完整配置首次运行 |
+| lyrics_context | SOFA+supplied_text_extractive | succeeded | 7.733 | 完整配置首次运行 |
 
-任务执行合计 **552.84 秒**，不含安装环境、前置模型下载、音频准备与报告写入；All-In-One 本轮包含剩余权重下载及其官方独立分离。不是纯推理性能基准，亦不是实时处理承诺。
+前五项来自独立的核心模型实跑；完整配置首次运行复用了这五项缓存，重新执行描述与歌词任务。随后完整配置复跑 **7/7 命中缓存**。表中为各任务耗时，**不能相加视为单次全流程墙钟耗时**；环境安装与首次模型获取也不计入。此记录不是实时性能承诺。
 
 | 输出 | 数量 |
 |---|---:|
@@ -24,23 +24,40 @@
 | 和弦片段 | 165 |
 | 拍点 / 第一拍 | 305 / 77 |
 | 结构段落 / 描述区间 | 21 / 21 |
-| 有曲风候选的区间 | 19 |
-| 有乐器 / 效价唤醒度的区间 | 21 / 21 |
+| 有曲风 / 乐器 / 效价唤醒度的区间 | 21 / 21 / 21 |
+| 歌词行 / 对齐单位 | 50 / 494 |
 
-整包状态为 **partial**：长无唱段使用周期性器乐候选，无法保证其属于主奏；首尾两段曲风分数未达到配置阈值，保持空值。全部七项任务无 failed；未提供歌词和背景，因此文本路径 skipped。情绪输出采用模型原生 1–9 量表，不解释成用户感受。
+整包状态为 **partial**，唯一处于 partial 的任务为旋律：自动选择的人声与无唱段器乐候选，尚不能保证均为预期主旋律。其他六项 succeeded，无 failed 或 skipped。未提供歌曲背景，因此背景字段为空；不自动编造背景事实。
 
-## 实际模型
+## 实际模型与生成审计
 
-- Demucs `htdemucs` 四轨；不做声部独立峰值归一化。
-- Basic Pitch ONNX + torchcrepe `tiny`，器乐候选路由另保留来源。
-- BTC 170 类，真实采样点偏移修正分块时间；`N` 与 `X` 分别为无和弦和未知。
-- Beat This! `final0`，未填写无依据的记谱拍号。
-- All-In-One `harmonix-all` 八折集成，固定 HF revision，8 份权重哈希见 JSON。
-- Essentia EffNet + Discogs400 + MTG Jamendo instrument；Music2Emo `J_all` + MERT-v1-95M。
+- Demucs `htdemucs` 四轨；不对各轨单独做峰值归一化。
+- Basic Pitch ONNX + torchcrepe `tiny`；器乐候选另保留来源。
+- BTC 170 类和弦；Beat This! `final0` 拍点；All-In-One `harmonix-all` 八折结构集成。
+- Essentia EffNet + Discogs400 + MTG Jamendo instrument；Music2Emo `J_all` + MERT-v1-95M，情绪保留原生 1–9 量表。
+- Qwen2-Audio-7B-Instruct **4-bit MLX**，音频编码器及投影层保留浮点。21 个区间全部为真实生成，最终无失败或静音跳过；共 33 次生成尝试，12 个区间发生重试。21 个区间使用转义引号规范化，累计 33 次操作；原始输出仅本地留存。重试原因是 11 个区间首次超过乐器数量上限、1 个区间首次超过曲风数量上限，均由程序自动重试，未手工删改模型标签。
+- MLX 报告的最高分配器峰值为 **7.20 GB（6.70 GiB）**，不等于进程 RSS 或整机内存占用。
+- SOFA 中文歌声正式权重，全曲人声对齐，无参考时间输入；唱名保留原文，使用模型词表内的显式发音近似。
+
+源码 revision、权重 SHA-256、量化参数与运行环境见 [指标 JSON](qingtian-analysis.json)。Qwen 曲风、乐器、质感均为未验证候选；结构可解析及生成成功不等于标签正确。
+
+## 歌词对齐独立诊断
+
+歌词文本来自[酷狗歌曲页面](https://www.kugou.com/song-36/c7i2yb5.html)，输入文件通过 SHA-256 与来源元数据匹配。使用**无时间纯文本**对齐；网站 LRC 时间仅在完成后比较，未参与推理。按原始行序及文本一致性匹配全部 50 行，保留重复句。
+
+| 与网站 LRC 的行起点差 | 秒 |
+|---|---:|
+| 绝对差中位数 | 0.153 |
+| 绝对差平均值 | 0.165 |
+| 绝对差 P95 | 0.305 |
+| 最大绝对差 | 0.467 |
+| 有符号平均差（SOFA − 网站） | -0.155 |
+
+50/50 行起点绝对差小于等于 0.5 秒。**网站时间不是人工真值，此处是来源间一致性诊断，不是模型准确率。** SOFA 上游对齐分数 0.4063 也不是校准后的正确概率。歌词主题、意象属于规则抽取候选，不推断作者意图。
 
 ## 自动识别的结构
 
-以下仅为模型估计，未经音乐学标注核验；相同标签的相邻片段保留原边界。
+以下为模型估计，未经音乐学标注核验；相邻同标签片段保留原边界。
 
 | 原曲秒数 | 模型标签 |
 |---|---|
@@ -63,17 +80,13 @@
 | 210.97–224.94 | chorus |
 | 224.94–238.96 | chorus |
 | 238.96–252.95 | chorus |
-| 252.95–266.32 | chorus |
-| 266.32–269.75 | end |
+| 252.95–266.58 | chorus |
+| 266.58–269.75 | end |
 
 ## 工程验证与限制
 
-歌曲包通过结构与时间语义校验；原曲时间范围、事件排序、和弦连续覆盖、有限数值和未知状态检查通过。共 67 项自动测试覆盖基础流程、模型接口、缓存/失败、LRC 时间、数据约束与报告安全；真实神经权重另用本曲集成运行验证。
+首次完整结果与最终缓存复跑结果均通过 JSON Schema 和时间语义校验，包括歌词逐字区间、父句范围、顺序、有限数值及未知状态。缓存复跑验证七项结果均可复用。主环境共 108 项测试：107 通过，1 项 MLX 数值测试转入专用环境；Qwen 专用环境 10 项全部通过。浏览器验证实际音频播放、90 秒跳转、歌词行/字词同步、句间清空、390 px 布局，无 JavaScript 错误或外部请求。
 
-复跑七个任务全部命中缓存。浏览器验证：音频时长匹配、90 秒定位、播放游标、图上点击跳转、手机布局均通过，无 JavaScript 异常及外部网络请求。
+工程流程完成不等于识别准确率达标。没有人工标注真值，不报告旋律、和弦、节拍、段落、乐器或情绪准确率；单曲实测不能证明跨曲目泛化。音乐情绪不等于听障观众的主观体验。Music2Emo 上游调式处理限制见 [描述模块说明](../docs/descriptions-implementation.md)。
 
-![本地报告预览](assets/analysis-preview.png)
-
-没有标注真值，因此**不提供旋律、和弦、节拍、段落或情绪的准确率**。单曲运行不能证明泛化；Qwen2-Audio 与 SOFA 真实权重未验收。Music2Emo 上游的已知调式处理限制见 [模块说明](../docs/descriptions-implementation.md)。
-
-[运行指标 JSON](qingtian-analysis.json) · [安装与复现](../docs/setup.md)
+[运行指标 JSON](qingtian-analysis.json) · [安装与复现](../docs/setup.md) · [SOFA 接入](../docs/sofa-implementation.md)

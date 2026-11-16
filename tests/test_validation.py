@@ -32,6 +32,14 @@ def package_fixture():
 
 
 class ValidationTest(unittest.TestCase):
+    @staticmethod
+    def package_with_words():
+        package = package_fixture()
+        package['lyrics_context']['lyrics'] = [{'text': 'a b', 'start': 1.0, 'end': 3.0,
+            'words': [{'text': 'a', 'token': 'a', 'start': 1.0, 'end': 2.0, 'phonemes': ['a']},
+                      {'text': 'b', 'token': 'b', 'start': 2.0, 'end': 3.0, 'phonemes': ['b']}]}]
+        return package
+
     def test_valid_partial_unknowns_and_extensions(self):
         package = package_fixture()
         package['extension'] = {'nullable': None}
@@ -93,6 +101,71 @@ class ValidationTest(unittest.TestCase):
     def test_complete_cannot_hide_partial_tasks(self):
         package = package_fixture(); package['run']['status'] = 'complete'
         self.assertTrue(validate_package(package))
+
+    def test_complete_optional_lyrics_task_is_type_safe(self):
+        package = package_fixture()
+        package['run']['status'] = 'complete'
+        package['run']['tasks'] = {name: {'status': 'succeeded'} for name in
+                                  ('melody', 'harmony', 'rhythm', 'sections', 'descriptions')}
+        self.assertEqual(validate_package(package), [])
+        for task in (None, False, [], 'succeeded', 1, {'status': 'partial'}):
+            with self.subTest(task=task):
+                package['run']['tasks']['lyrics_context'] = task
+                errors = validate_package(package)
+                self.assertTrue(any('supplied lyrics/context' in error for error in errors))
+        for status in ('skipped', 'succeeded'):
+            package['run']['tasks']['lyrics_context'] = {'status': status}
+            self.assertEqual(validate_package(package), [])
+
+    def test_word_intervals_are_optional_valid_and_not_mutated(self):
+        package = self.package_with_words()
+        before = copy.deepcopy(package)
+        self.assertEqual(validate_package(package), [])
+        self.assertEqual(package, before)
+        line = package['lyrics_context']['lyrics'][0]
+        del line['words']
+        line.update(start=None, end=None)
+        self.assertEqual(validate_package(package), [])
+
+    def test_word_time_bounds_order_overlap_and_parent_containment(self):
+        cases = [
+            ('negative', lambda words: words[0].update(start=-1)),
+            ('past duration', lambda words: words[1].update(end=11)),
+            ('zero duration', lambda words: words[0].update(end=1)),
+            ('reverse interval', lambda words: words[0].update(end=0.5)),
+            ('reverse order', lambda words: words.reverse()),
+            ('overlap', lambda words: words[1].update(start=1.5)),
+            ('outside parent', lambda words: words[0].update(start=0.5)),
+            ('nonfinite', lambda words: words[0].update(start=float('nan'))),
+            ('boolean time', lambda words: words[0].update(start=True)),
+            ('missing end', lambda words: words[0].pop('end')),
+        ]
+        for name, mutate in cases:
+            with self.subTest(name=name):
+                package = self.package_with_words()
+                mutate(package['lyrics_context']['lyrics'][0]['words'])
+                self.assertTrue(any('words' in error for error in validate_package(package)))
+        package = self.package_with_words()
+        package['lyrics_context']['lyrics'][0].update(start=None, end=None)
+        self.assertTrue(any('timed parent' in error for error in validate_package(package)))
+
+    def test_word_array_text_tokens_and_phonemes_reject_malformed_values(self):
+        for value in (None, {}, 'not an array', 1, [None], ['word']):
+            with self.subTest(words=value):
+                package = self.package_with_words()
+                package['lyrics_context']['lyrics'][0]['words'] = value
+                self.assertTrue(any('words' in error for error in validate_package(package)))
+        for key in ('text', 'token'):
+            for value in (None, '', ' ', [], 3):
+                with self.subTest(key=key, value=value):
+                    package = self.package_with_words()
+                    package['lyrics_context']['lyrics'][0]['words'][0][key] = value
+                    self.assertTrue(any('.' + key in error for error in validate_package(package)))
+        for value in (None, 'a', [], [None], [''], [1]):
+            with self.subTest(phonemes=value):
+                package = self.package_with_words()
+                package['lyrics_context']['lyrics'][0]['words'][0]['phonemes'] = value
+                self.assertTrue(any('phonemes' in error for error in validate_package(package)))
 
     def test_malformed_values_return_errors_not_type_errors(self):
         for value in ([], {}, False, 'bad', None):
