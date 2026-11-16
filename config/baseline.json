@@ -1,0 +1,13 @@
+{
+  "schema_version": "0.1.0",
+  "execution": {"timeout_seconds": 1800, "retries": 0},
+  "tasks": {
+    "separation": {"backend": "baseline", "fallback": true},
+    "rhythm": {"backend": "baseline", "fallback": true},
+    "sections": {"backend": "baseline", "fallback": true},
+    "melody": {"backend": "baseline", "fallback": true},
+    "harmony": {"backend": "baseline", "fallback": true},
+    "descriptions": {"backend": "baseline", "fallback": true},
+    "lyrics_context": {"backend": "baseline", "fallback": true}
+  }
+}
