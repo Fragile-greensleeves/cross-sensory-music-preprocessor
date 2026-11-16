@@ -19,9 +19,9 @@ from .config import TASKS, load_config
 
 DEPENDENCIES = {
     "separation": (), "rhythm": (), "sections": (),
-    "melody": ("separation",), "harmony": ("separation", "rhythm"),
-    "descriptions": ("sections", "rhythm", "separation"),
-    "lyrics_context": ("sections", "separation"),
+    "melody": ("separation",), "harmony": (),
+    "descriptions": ("sections",),
+    "lyrics_context": ("separation",),
 }
 
 
@@ -40,13 +40,51 @@ def object_hash(data):
     return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()
 
 
-def implementation_hash():
-    root = Path(__file__).parent
-    digest = hashlib.sha256()
-    for path in sorted(root.rglob("*.py")):
-        digest.update(str(path.relative_to(root)).encode())
-        digest.update(path.read_bytes())
-    return digest.hexdigest()
+# Version 2 intentionally does not reuse legacy whole-project cache keys. The
+# legacy records cannot prove which task implementation produced their outputs.
+TASK_CACHE_VERSION = 2
+TASK_CODE_FILES = {
+    "separation": ("adapters/separation.py",),
+    "rhythm": ("adapters/events.py",),
+    "sections": ("adapters/structure.py",),
+    "melody": ("adapters/events.py",),
+    "harmony": ("adapters/events.py", "btc_worker.py"),
+    "descriptions": ("adapters/descriptions.py",),
+    # SOFA imports the clip reader from descriptions; include that dependency.
+    "lyrics_context": ("adapters/lyrics.py", "adapters/descriptions.py"),
+}
+TASK_CODE_PATTERNS = {
+    "descriptions": ("qwen*.py", "adapters/qwen*.py"),
+    "lyrics_context": ("sofa*.py", "adapters/sofa*.py", "qwen*.py", "adapters/qwen*.py"),
+}
+
+
+def task_implementation_hash(task, root=None):
+    """Fingerprint worker/adapter code only, excluding CLI/report/package assembly.
+
+    Tasks that share an adapter module invalidate together conservatively. Update
+    TASK_CODE_FILES/PATTERNS for new local imports and bump TASK_CACHE_VERSION if
+    the runner's execution contract changes in a way that can alter model output.
+    """
+    if task not in TASK_CODE_FILES:
+        raise ValueError(f"Unknown task for implementation fingerprint: {task}")
+    root = Path(root) if root is not None else Path(__file__).parent
+    names = {"__init__.py", "worker.py", "adapters/__init__.py", *TASK_CODE_FILES[task]}
+    for pattern in TASK_CODE_PATTERNS.get(task, ()):
+        names.update(path.relative_to(root).as_posix() for path in root.glob(pattern) if path.is_file())
+    files = {}
+    for name in sorted(names):
+        path = root / name
+        files[name] = sha256_file(path) if path.is_file() else None
+    return object_hash({"cache_version": TASK_CACHE_VERSION, "files": files})
+
+
+def task_input_hashes(task, context):
+    """Only the optional-text task consumes supplied lyrics/background files."""
+    if task != "lyrics_context":
+        return {}
+    return {name: value for name, value in context.get("input_hashes", {}).items()
+            if name in ("lyrics", "background")}
 
 
 def environment_versions():
@@ -64,7 +102,7 @@ MODEL_FILE_SUFFIXES = {
     ".pt", ".pth", ".ckpt", ".onnx", ".safetensors", ".pb", ".tflite",
     ".h5", ".hdf5", ".npy", ".npz", ".bin", ".pkl", ".pickle",
 }
-MODEL_DIRECTORY_KEYS = {"repo", "btc_repo", "weights", "checkpoint", "model_dir"}
+MODEL_DIRECTORY_KEYS = {"repo", "btc_repo", "weights", "checkpoint", "model_dir", "model_id"}
 SKIP_MODEL_DIRS = {".git", "__pycache__", "venv", "env", "node_modules", "audio", "logs", "outputs", ".pytest_cache"}
 
 
@@ -240,8 +278,10 @@ def cache_artifacts_valid(result):
 
 def execute_task(task, context, cache_root, execution, fingerprint, force=False):
     python_environments = configured_python_environments(context["config"])
-    key = object_hash({"task": task, "source": fingerprint, "config": context["config"],
-                       "dependencies": context["dependencies"], "optional_inputs": context.get("input_hashes", {}),
+    implementation = task_implementation_hash(task)
+    key = object_hash({"cache_version": TASK_CACHE_VERSION, "task": task, "source": fingerprint,
+                       "implementation": implementation, "config": context["config"],
+                       "dependencies": context["dependencies"], "optional_inputs": task_input_hashes(task, context),
                        "configured_files": configured_file_hashes(context["config"]),
                        "python_environments": python_environments})
     folder = Path(cache_root) / task / key
@@ -268,14 +308,15 @@ def execute_task(task, context, cache_root, execution, fingerprint, force=False)
         env.setdefault("OMP_NUM_THREADS", "2")
         env.setdefault("MKL_NUM_THREADS", "2")
         python = context["config"].get("python", sys.executable)
+        timeout_seconds = context["config"].get("timeout_seconds", execution["timeout_seconds"])
         try:
             code, timeout = run_process([python, "-m", "musicprep.worker", task, str(context_file.resolve()), str(result_file.resolve())],
-                                        attempt_dir / "worker.log", execution["timeout_seconds"], env)
+                                        attempt_dir / "worker.log", timeout_seconds, env)
         except OSError as exc:
             code, timeout = -1, False
             result = {"status": "failed", "data": {}, "warnings": [f"Could not launch worker: {exc}"], "provenance": {}}
         if timeout:
-            result = {"status": "failed", "data": {}, "warnings": [f"Task exceeded {execution['timeout_seconds']} seconds"], "provenance": {}}
+            result = {"status": "failed", "data": {}, "warnings": [f"Task exceeded {timeout_seconds} seconds"], "provenance": {}}
         elif result_file.exists():
             try:
                 result = json.loads(result_file.read_text())
@@ -295,7 +336,9 @@ def execute_task(task, context, cache_root, execution, fingerprint, force=False)
                 artifacts.append({"path": normalized, "sha256": sha256_file(Path(path))})
     result["artifacts"] = artifacts
     result.setdefault("provenance", {}).update({"pipeline_version": __version__, "cache_key": key,
-                                               "python_environments": python_environments})
+                                               "python_environments": python_environments,
+                                               "cache_version": TASK_CACHE_VERSION,
+                                               "task_implementation_sha256": implementation})
     atomic_json(cached, result)
     return result, {"cached": False, "cache_key": key, "duration_seconds": round(time.monotonic() - started, 3),
                     "attempts": attempt + 1, "log": str((attempt_dir / "worker.log").relative_to(cache_root))}
@@ -309,6 +352,8 @@ def assemble_package(track_id, manifest, results, records, run_id):
         return data
     required = ("melody", "harmony", "rhythm", "sections", "descriptions")
     states = [records[name]["status"] for name in required]
+    if records.get("lyrics_context", {}).get("status", "skipped") != "skipped":
+        states.append(records["lyrics_context"]["status"])
     status = "complete" if all(s == "succeeded" for s in states) else "partial"
     if all(s == "failed" for s in states):
         status = "failed"
@@ -361,8 +406,7 @@ def analyze(source, output, track_id=None, profile="auto", config_path=None, lyr
             manifest = prepare_audio(source, audio_dir, track_id)
         run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
         versions = environment_versions()
-        fingerprint = {"source_sha256": source_hash, "canonical_sha256": manifest["canonical"]["sha256"],
-                       "implementation": implementation_hash(), "versions": versions}
+        fingerprint = {"source_sha256": source_hash, "canonical_sha256": manifest["canonical"]["sha256"]}
         records, results = {}, {}
         for task in TASKS:
             if progress:
@@ -371,7 +415,8 @@ def analyze(source, output, track_id=None, profile="auto", config_path=None, lyr
                        "duration": manifest["canonical"]["duration_seconds"], "sample_rate": manifest["canonical"]["sample_rate"],
                        "channels": manifest["canonical"]["channels"], "config": config["tasks"][task],
                        "dependencies": {name: results.get(name, {}).get("data", {}) for name in DEPENDENCIES[task]},
-                       "optional_inputs": optional, "input_hashes": input_hashes}
+                       "optional_inputs": optional if task == "lyrics_context" else {},
+                       "input_hashes": input_hashes if task == "lyrics_context" else {}}
             result, record = execute_task(task, context, output / "cache", config["execution"], fingerprint, force)
             results[task] = result
             records[task] = dict(record, status=result["status"], provenance=result.get("provenance", {}))

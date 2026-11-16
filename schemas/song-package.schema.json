@@ -163,7 +163,10 @@
       "type": "object",
       "properties": {
         "lyrics": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/lyric_line"
+          }
         },
         "themes": {
           "type": "array"
@@ -533,6 +536,12 @@
               "type": "null"
             }
           ]
+        },
+        "model_results": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/description_model_result"
+          }
         }
       },
       "required": [
@@ -598,6 +607,108 @@
         "end",
         "bpm",
         "beat_unit"
+      ],
+      "additionalProperties": true
+    },
+    "lyric_word": {
+      "description": "An aligned lexical unit; text preserves the original spelling and token identifies the pronunciation dictionary entry. Ordering and parent-interval bounds are checked by musicprep validate.",
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "token": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "start": {
+          "type": "number",
+          "minimum": 0
+        },
+        "end": {
+          "type": "number",
+          "minimum": 0
+        },
+        "phonemes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          }
+        }
+      },
+      "required": [
+        "text",
+        "token",
+        "start",
+        "end"
+      ],
+      "additionalProperties": true
+    },
+    "lyric_line": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "start": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "end": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "words": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/lyric_word"
+          }
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": true
+    },
+    "description_model_result": {
+      "description": "Per-model execution outcome. Status-only objects are allowed in publicly redacted review snapshots.",
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "succeeded",
+            "partial",
+            "failed",
+            "rejected",
+            "missing",
+            "skipped"
+          ]
+        },
+        "data": {
+          "type": "object"
+        },
+        "error": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        }
+      },
+      "required": [
+        "status"
       ],
       "additionalProperties": true
     }

@@ -60,7 +60,7 @@
 
 CLI 配置接受相对路径，以配置文件所在目录为基准；进入独立模型工作目录前已转为绝对路径。直接调用适配器的 Python API 时应传绝对路径。
 
-Qwen2-Audio 可在 `model_backends.qwen2_audio` 配置 `python`、`model_id`（本地路径或 HF ID）、`allow_download`、`device_map`、`max_new_tokens`、`timeout_seconds`。7B 模型不适合与多个大模型同时挤在 16 GB 机器中；本项目不默认加载它。模型生成的候选标签与其他模型一致，均不视为事实标注。
+完整配置在 `model_backends.qwen2_audio` 选择 `runtime: "mlx"`、独立 `python` 和本地 `model_id`，顺序加载 4-bit 权重。其他机器仍可选择旧 Hugging Face 适配路径，但本次验收针对 Apple Silicon MLX。配置和前端兼容处理见 [Qwen 实现](qwen-implementation.md)。生成标签保留 `source: "qwen2_audio"`，不覆盖 Essentia 的标签或分数，不输出效价/唤醒度。
 
 Music2Emotion 需要仓库自带的 `saved_models/J_all.ckpt`、整个 `inference/data`，另需 `m-a-p/MERT-v1-95M`。主要依赖：PyTorch、torchaudio、Transformers 4.44、pytorch-lightning、music21、pretty_midi、mir_eval、hydra-core、gradio、librosa、NumPy < 2。实际环境建议由项目统一锁定，避免与其他分析模型争用依赖版本。
 
@@ -87,7 +87,7 @@ Essentia 必须具有 `TensorflowPredictEffnetDiscogs` 和 `TensorflowPredict2D`
 }
 ```
 
-SOFA 环境需要其官方依赖和 `pypinyin`；`text_type` 也可为 `pinyin`。默认中文路径拒绝混入英文或数字的歌词，避免用错误字典强行对齐。后台环境缺依赖时保留原文、时间留空、返回警告；不要求用户在处理中确认。自动转写与检索背景不在本模块中隐式发生。
+SOFA 环境需要其官方依赖和 `pypinyin`；`text_type` 也可为 `pinyin`。中文路径拒绝未知外文或数字；`solfege: true` 支持明确记录为近似的唱名映射，其他词可显式配置 `token_pronunciations`，所有音素须被模型支持。后台环境缺依赖时保留原文、时间留空、返回警告；不要求用户在处理中确认。自动转写与检索背景不在本模块中隐式发生。
 
 ## 数据约定与容错
 
@@ -99,16 +99,17 @@ SOFA 环境需要其官方依赖和 `pypinyin`；`text_type` 也可为 `pinyin`�
 - 语义抽取保留 `lyric_id`、原词证据、来源行号；重复副歌按各自出现时间记录。
 - LRC offset 采用常见的“正数提前、负数延后”约定：`实际秒数 = 时间戳 - offset / 1000`；例如 `[offset:500]` 下 `[00:02]` 对应 1.5 秒。依据：[Liricle](https://github.com/mcanam/liricle#offset-gettersetter)、[Paroles](https://github.com/Clarkkkk/paroles#lyrics)。空歌词时间戳只结束上一句，不生成空语义记录。
 - 所有模型结果拒绝 NaN、Infinity、越界情绪数值、重复片段索引。段落 ID 从不作为输出文件路径。
-- `fallback: false` 会将模型进程失败或输入文件错误抛给任务调度器；单个模型片段的拒绝仍以警告表示。
+- `fallback: false` 会将模型进程失败、片段结果拒绝或输入文件错误抛给任务调度器；默认降级模式保留其余有效结果并返回 partial。
 
 ## 验证
 
-2026-11-16 已在 macOS ARM64、Python 3.11、PyTorch/torchaudio 2.5.1、Transformers 4.44.2 环境跑通 Music2Emotion 官方检查点与 MERT 的真实 8 秒音频冒烟测试，输出有限的 1–9 效价/唤醒度及情绪候选。同一片段已跑通 Essentia Discogs EffNet、Discogs400 与 MTG Jamendo 乐器模型，输出带分数的曲风和乐器候选。8 秒测试验证接入，不证明音乐判断准确；正式处理按结构段落或 30 秒窗口分析。另已对本地《晴天》完整音频跑通 9 个基础声学窗口。Qwen2-Audio、SOFA 的真实模型尚需在对应依赖与权重齐全的环境验证。
+真实全曲集成记录见 [《晴天》验证](../reports/qingtian-analysis.md)。Qwen 与 SOFA 的独立模型权重、运行环境、前端和词级对齐说明分别见 [Qwen](qwen-implementation.md)、[SOFA](sofa-implementation.md)。运行成功只证明工程链路，不证明曲风、音色、情绪或歌词时间已经通过人工标注评估。
 
-基础单元测试覆盖：纯音频谱、静音不被误标成情绪、越界段落、路径穿越 ID、单段模型失败、非有限模型输出、重复 LRC 句子、非法时间戳、无时间文本、背景来源、坏 JSON、SOFA HTK 对齐词序核验。SOFA 测试使用模拟进程输出验证适配协议，不能替代真实模型准确率测试。
+基础单元测试覆盖：纯音频谱、静音不被误标成情绪、越界段落、路径穿越 ID、单段模型失败、非有限模型输出、重复 LRC 句子、非法时间戳、无时间文本、背景来源、坏 JSON、SOFA HTK 对齐词序核验。单元测试中的模拟输出只验证适配协议；真实整曲推理另行记录，也不能替代人工标注准确率测试。
 
 ```bash
-python -m unittest tests.test_descriptions tests.test_lyrics -v
+python -m unittest discover -s tests -p 'test_descriptions.py' -v
+python -m unittest discover -s tests -p 'test_lyrics.py' -v
 ```
 
 方法来源：[Music2Emotion](https://github.com/AMAAI-Lab/Music2Emotion)、[Essentia 模型](https://essentia.upf.edu/models.html)、[Qwen2-Audio](https://github.com/QwenLM/Qwen2-Audio)、[SOFA](https://github.com/qiuqiao/SOFA)。模型权重和上游代码各自遵循原项目许可，不随本项目一起重新授权。

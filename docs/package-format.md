@@ -46,3 +46,13 @@ musicprep validate work/my-song/song-package.json
 - 下载内嵌歌曲包，检查完整记录。HTML 内数据用安全 JSON 嵌入，用户文本只通过 `textContent` 显示。
 
 报告中的同步依据浏览器播放器时间，仅用于分析诊断，不等同于设备端同步精度测试。
+
+## 描述来源与词级对齐
+
+- `descriptions[].model_results` 分别保存 Essentia、Music2Emo、Qwen 的原始结构化候选与状态；顶层标签携带 `source`。不同模型的冲突标签并列保留，不作未经验证的投票。
+- `run.tasks.descriptions.provenance.models` 保存各模型请求/成功/失败/拒绝/缺失数；模型失败不能被其他模型字段齐全掩盖。
+- `lyrics_context.lyrics[].words` 保存汉字/唱名的 `text`、`token`、`phonemes`、`start/end`；检查词序、重叠、全曲边界及所属句区间。
+- SOFA 的整体置信指标按原模型含义保留，不宣称逐词正确率；文本来源哈希、读音近似和是否使用参考时间均可追溯。
+- 提供了歌词/背景时，其处理失败会使总状态为 `partial`；未提供时仍允许 `skipped`。
+
+分享诊断前使用 `.venv/bin/musicprep report work/qingtian-full/song-package.json --output work/public-report.html --public`。公开版移除歌词原文、文本语义、本地路径与音频引用；默认本地报告保留完整诊断。不要直接发布本地完整歌曲包或报告。

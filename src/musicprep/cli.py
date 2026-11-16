@@ -25,6 +25,7 @@ def main():
     report.add_argument("package", type=Path)
     report.add_argument("--output", type=Path, required=True)
     report.add_argument("--audio", type=Path)
+    report.add_argument("--public", action="store_true", help="导出可分享的诊断报告，去除歌词原文、本地路径和音频链接")
     sub.add_parser("doctor", help="检查依赖，不下载模型")
     args = parser.parse_args()
     try:
@@ -55,7 +56,7 @@ def main():
                 raise SystemExit(1)
             if args.command == "report":
                 from .report import write_report
-                write_report(package, args.output, args.audio)
+                write_report(package, args.output, args.audio, public=args.public)
                 print(args.output)
             else:
                 print(json.dumps({"valid": True, "status": package["run"]["status"]}))

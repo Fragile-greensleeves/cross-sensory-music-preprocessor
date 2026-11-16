@@ -10,14 +10,14 @@
 | 音符识别 | [Basic Pitch](https://github.com/spotify/basic-pitch) | [ICASSP 2022](https://arxiv.org/abs/2203.09893) | 单一声部更合适；不能自动保证主旋律归属 |
 | 连续基频 | [torchcrepe](https://github.com/maxrmorrison/torchcrepe) | [CREPE](https://arxiv.org/abs/1802.06182) | 周期性/静音需过滤，不适合直接解释所有复音 |
 | 器乐显著旋律 | [Essentia](https://github.com/MTG/essentia) | [PredominantPitchMelodia](https://essentia.upf.edu/reference/streaming_PredominantPitchMelodia.html) | 显著旋律估计，不一定是设计者希望的主奏 |
-| 和弦识别 | [BTC](https://github.com/jayg996/BTC-ISMIR19) | [ISMIR 2019](https://arxiv.org/abs/1907.02698) | 需大词表模式；依赖与权重实际加载待验证 |
+| 和弦识别 | [BTC](https://github.com/jayg996/BTC-ISMIR19) | [ISMIR 2019](https://arxiv.org/abs/1907.02698) | 已运行 170 类模型；复杂和弦仍需标注集评价 |
 | 和弦编码/评估 | [mir_eval](https://github.com/mir-evaluation/mir_eval) | [chord API](https://mir-eval.readthedocs.io/latest/api/chord.html) | 标签解析，不从音频识别和弦 |
 | 节拍 | [Beat This!](https://github.com/CPJKU/beat_this) | [ISMIR 2024](https://arxiv.org/abs/2407.21658) | 拍点/第一拍不等于完整拍号 |
 | 段落结构 | [All-In-One](https://github.com/mir-aidj/all-in-one) | [ISMIR 2023](https://arxiv.org/abs/2307.16425) | 不识别和弦；维护官方前处理兼容性 |
 | 曲风与乐器 | [Essentia](https://github.com/MTG/essentia) | [预训练模型](https://essentia.upf.edu/models.html) | 标签有限；库和权重许可分别核对 |
 | 音频情绪 | [Music2Emotion](https://github.com/AMAAI-Lab/Music2Emotion) | [Music2Emo](https://arxiv.org/abs/2502.03979) | 输入级汇总；分段调用需要自研封装与评估 |
 | 音频语言描述 | [Qwen2-Audio](https://github.com/QwenLM/Qwen2-Audio) | [技术报告](https://arxiv.org/abs/2407.10759) | 生成描述候选；JSON合法不等于内容正确 |
-| 歌词对齐 | [SOFA](https://github.com/qiuqiao/SOFA) | [中文文档](https://github.com/qiuqiao/SOFA/blob/main/README_zh.MD) | 需要歌词、语言模型/字典和切片匹配 |
+| 歌词对齐 | [SOFA](https://github.com/qiuqiao/SOFA) | [中文文档](https://github.com/qiuqiao/SOFA/blob/main/README_zh.MD) | 需要参考歌词及语言模型/字典；本项目整曲对齐无需手工切片 |
 | 特征辅助 | [librosa](https://github.com/librosa/librosa) | 仓库文档 | 频谱特征不直接等于情绪或质感标签 |
 | 开发期诊断 | [Sonic Visualiser](https://github.com/sonic-visualiser/sonic-visualiser) | 仓库 README | 仅研发可选检查工具，不加入生产人工关卡 |
 

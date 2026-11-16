@@ -1,6 +1,6 @@
 # 安装与模型准备
 
-实测环境：macOS、Apple M5、16 GB、Python 3.11、CPU。基础版可在 macOS/Linux 运行；Windows 原生的进程锁/终止组尚未适配，可使用 WSL。模型首次下载完成后，本地音频分析不会上传歌曲。
+实测环境：macOS、Apple M5、16 GB、Python 3.11；核心分析使用 CPU，Qwen 使用 MLX / Metal。基础版可在 macOS/Linux 运行；Windows 原生的进程锁/终止组尚未适配，可使用 WSL。模型首次下载完成后，本地音频分析不会上传歌曲。
 
 ## 1. 基础环境
 
@@ -76,7 +76,24 @@ macOS 需要 Command Line Tools。Linux 根据其编译器选择参数；不要�
 
 所有配置相对路径以配置文件所在目录为准；`config/neural.json` 内 `../models/...` 指仓库的 models 目录。模型需要另一个 Python 环境时，在对应任务或描述模型中设置 `python`；环境版本参与缓存指纹，虚拟环境符号链接会保留。
 
-Qwen2-Audio 7B、SOFA 不在本轮默认安装中；适配器及配置说明已有，真实权重尚未验收。基础提取式文本路径已测试。安装模型后若隐式缓存发生变化，可用 `--force` 重算。
+## 6. 完整配置：Qwen2-Audio + SOFA
+
+Apple Silicon 上用独立环境，避免 MLX 与旧研究模型依赖冲突：
+
+```sh
+.venv/bin/python scripts/setup_qwen.py
+.venv/bin/python scripts/setup_sofa.py
+
+.venv/bin/musicprep analyze data/raw/qingtian.flac \
+  --output work/qingtian-full --track-id qingtian \
+  --config config/full.json --lyrics data/raw/qingtian-lyrics.txt
+```
+
+Qwen 直接下载社区 4-bit 权重（约 6.56 GB），按固定 revision 和 SHA-256 校验；不是下载原始 7B 权重再量化。SOFA 下载官方中文演唱模型，自动把中文和支持的唱名转换成音素、对齐整首人声，不需要手工切句或时间戳。模型按顺序运行；本机 16 GB 环境不要同时加载多个大模型。
+
+SOFA 是强制对齐器，**需要参考歌词，不负责听写或联网检索**。歌词缺失时文本任务 skipped；未知语言/读音失败会保留原因，不猜时间。参考文本可附 `source_metadata` 文件，记录来源 URL 与文本 SHA-256；来源文件不提供时间。详细配置：[Qwen](qwen-implementation.md) · [SOFA](sofa-implementation.md)。
+
+`setup_models.py --all` 只安装核心模型组；两个新增安装脚本单独执行。隐式上游缓存发生变化时可用 `--force` 重算。
 
 ## 常见结果
 
