@@ -2,6 +2,44 @@
 
 输入歌曲音频，自动生成共享原曲时间轴的旋律、和声、节奏、段落、音乐描述、歌词与背景数据，为视觉、灯带和固定强度马达的映射提供输入。
 
+## 整体架构
+
+以下为完整开发架构：共享音频预处理，自动分析即时事件与音乐描述，统一导出歌曲数据包。
+
+```mermaid
+flowchart TB
+    A["输入歌曲音频<br/>可选歌词与有来源的介绍"] --> B["音频准备｜FFmpeg / ffprobe<br/>WAV · 元数据 · 内容哈希 · 原曲时间轴"]
+    B --> C["分轨｜HTDemucs<br/>人声 · 鼓 · 贝斯 · 其他伴奏"]
+    B --> D["完整混音分支"]
+    C --> M["自动旋律候选与选择<br/>Basic Pitch + torchcrepe<br/>器乐候选：Essentia Melodia<br/>音高 · 音符起止 · 有效标记"]
+    D --> H["和声｜BTC + mir_eval<br/>和弦标签 · 音类集合 · 起止"]
+    D --> R["节奏｜Beat This!<br/>拍点 · 第一拍 · 局部速度"]
+    D --> S["结构｜All-In-One<br/>段落名称 · 边界"]
+    S --> W["按段落切片<br/>从完整混音按原曲时间读取"]
+    W --> E["音乐描述<br/>Essentia：曲风、乐器<br/>Music2Emo：效价、唤醒度<br/>Qwen2-Audio：质感、氛围候选"]
+    W --> L["可选文本分支<br/>SOFA：人声与歌词对齐<br/>语言模型：主题、意象、背景摘要"]
+    M --> Q["自动后处理与校验<br/>时间对齐 · 异常过滤 · 状态标记"]
+    H --> Q
+    R --> Q
+    S --> Q
+    E --> Q
+    L --> Q
+    Q --> P["统一歌曲数据包<br/>即时路径 + 描述路径"]
+    P --> V["下游映射：视觉、灯带、马达"]
+    classDef base fill:#EDF2FA,stroke:#617DA6,color:#15345E;
+    classDef instant fill:#E8F2FD,stroke:#578BC2,color:#15345E;
+    classDef descr fill:#F0EBF8,stroke:#8974B1,color:#493966;
+    classDef output fill:#123675,stroke:#123675,color:#FFFFFF;
+    class A,B,C,D,S,W base;
+    class M,H,R instant;
+    class E,L descr;
+    class Q,P,V output;
+```
+
+图中省略辅助连线：文本分支同时读取分离人声与可选文本，速度描述复用节奏结果。各模块实现进度见下方说明；[查看详细架构](docs/architecture.md)。
+
+## 开发状态
+
 **当前状态：架构与方法已定义；基础音频准备脚本可运行；音乐模型尚未集成。** 本仓库不把模型候选当作人工确认结果，也不把计划功能标为已实现。生产分析流程不设置逐曲人工审核关卡；开发阶段用标注样本评估准确性。
 
 ## 文档入口
